@@ -36,6 +36,7 @@ PROVIDER_COLORS = {
     "gemini": "#5f7c8a",        # steel blue
     "trae": "#a07a65",          # muted clay
     "windsurf": "#7f8c5a",      # olive
+    "droid": "#c9a84c",         # gold
 }
 
 
@@ -215,42 +216,51 @@ def build_html(data: dict) -> str:
     .filter-bar {{
       display: flex;
       align-items: center;
-      gap: var(--space-sm);
+      gap: 0.5rem;
       margin-bottom: var(--space-lg);
-      padding: var(--space-sm) var(--space-md);
+      padding: 0.5rem 0.75rem;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
+      flex-wrap: wrap;
     }}
     .filter-bar .filter-label {{
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: var(--text-muted);
       font-weight: 600;
+      flex-shrink: 0;
+    }}
+    .filter-pills {{
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+      flex: 1;
+      min-width: 0;
     }}
     .filter-btn {{
-      padding: 0.35rem 0.85rem;
+      padding: 0.25rem 0.65rem;
       border-radius: 999px;
       border: 1px solid var(--border);
       background: transparent;
       color: var(--text-muted);
-      font-size: 0.75rem;
-      font-family: ui-monospace, monospace;
+      font-size: 0.7rem;
+      font-family: inherit;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s;
+      white-space: nowrap;
     }}
     .filter-btn:hover {{ color: var(--text); border-color: var(--text-muted); }}
     .global-range {{
-      margin-left: auto;
       background: var(--surface);
       color: var(--text);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 0.35rem 0.55rem;
-      font-size: 0.75rem;
-      min-width: 9rem;
+      padding: 0.3rem 0.5rem;
+      font-size: 0.7rem;
+      flex-shrink: 0;
     }}
     .action-btn {{
       margin-left: auto;
@@ -443,20 +453,31 @@ def build_html(data: dict) -> str:
     .path  {{ max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; color: var(--text-muted); }}
 
     .model-badge {{
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4em;
       padding: 0.2em 0.65em;
-      border-radius: 999px;
+      border-radius: 8px;
       border: 1px solid;
-      font-size: 0.75rem;
+      font-size: 0.8rem;
       font-weight: 500;
-      font-family: ui-monospace, monospace;
+      font-family: inherit;
+      max-width: 100%;
+    }}
+    .model-badge .model-name {{
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }}
     .provider-badge {{
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       font-weight: 600;
-      font-family: ui-monospace, monospace;
+      font-family: inherit;
       text-transform: uppercase;
       letter-spacing: 0.03em;
+      padding: 0.15em 0.45em;
+      border-radius: 4px;
+      background: var(--surface-hover);
     }}
 
     .timeline-card {{
@@ -623,11 +644,14 @@ def build_html(data: dict) -> str:
   <!-- Provider filter -->
   <div class="filter-bar">
     <span class="filter-label">Filter</span>
-    <button class="filter-btn active" data-provider="all">All</button>
+    <div class="filter-pills">
+      <button class="filter-btn active" data-provider="all">All</button>
+    </div>
     <select id="globalRangeSelect" class="global-range" aria-label="Global date range">
+      <option value="7d">Last 7 days</option>
       <option value="30d">Last 30 days</option>
       <option value="90d" selected>Last 90 days</option>
-      <option value="180d">Last 180 days</option>
+      <option value="180d">Last 6 months</option>
       <option value="1y">Last 1 year</option>
       <option value="2y">Last 2 years</option>
       <option value="all">All time</option>
@@ -725,14 +749,7 @@ def build_html(data: dict) -> str:
             <button class="btn" data-value="week">Week</button>
             <button class="btn" data-value="month">Month</button>
           </div>
-          <select id="lookbackSelect" class="timeline-select" aria-label="Timeline range">
-            <option value="1m">Last 1 month</option>
-            <option value="3m" selected>Last 3 months</option>
-            <option value="6m">Last 6 months</option>
-            <option value="1y">Last 1 year</option>
-            <option value="2y">Last 2 years</option>
-            <option value="all">All time</option>
-          </select>
+          <!-- Range controlled by global filter -->
         </div>
       </div>
       <div class="timeline-wrapper"><canvas id="lineChart"></canvas></div>
@@ -943,6 +960,12 @@ ALL_MODELS.forEach(m => {{
   MODEL_RATE[m.key] = denom > 0 ? (m.cost_estimated || 0) / denom : 0;
 }});
 
+function parseModelKey(key) {{
+  const match = key.match(/^(.+?)\\s*\\[(.+?)\\]$/);
+  if (match) return {{ name: match[1].trim(), provider: match[2].trim() }};
+  return {{ name: key, provider: "" }};
+}}
+
 const NORMALIZED_MESSAGES = RAW_MESSAGES.map(m => {{
   const provider = m.provider || "unknown";
   const modelKey = `${{m.model}} [${{provider}}]`;
@@ -966,7 +989,7 @@ const NORMALIZED_MESSAGES = RAW_MESSAGES.map(m => {{
 // State
 // =========================================================================
 let activeProvider = "all"; // "all" or a provider name
-let tlState = {{ chartType: "line", tokenType: "total", groupBy: "day", lookback: "3m" }};
+let tlState = {{ chartType: "line", tokenType: "total", groupBy: "day" }};
 let globalRange = "90d";
 
 const chartDefaults = {{
@@ -1122,6 +1145,7 @@ function initNav() {{
 // =========================================================================
 function initFilterBar() {{
   const bar = document.querySelector(".filter-bar");
+  const pills = bar.querySelector(".filter-pills");
   const globalRangeSelect = document.getElementById("globalRangeSelect");
   PROVIDERS.forEach(p => {{
     const btn = document.createElement("button");
@@ -1129,12 +1153,12 @@ function initFilterBar() {{
     btn.dataset.provider = p.name;
     btn.textContent = p.name;
     btn.style.setProperty("--pcolor", p.color);
-    bar.appendChild(btn);
+    pills.appendChild(btn);
   }});
-  bar.addEventListener("click", e => {{
+  pills.addEventListener("click", e => {{
     const btn = e.target.closest(".filter-btn");
     if (!btn) return;
-    bar.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+    pills.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     activeProvider = btn.dataset.provider;
     renderAll();
@@ -1146,12 +1170,11 @@ function initFilterBar() {{
       renderAll();
     }});
   }}
-  // Style active buttons
   updateFilterStyles();
 }}
 
 function updateFilterStyles() {{
-  document.querySelectorAll(".filter-btn").forEach(btn => {{
+  document.querySelectorAll(".filter-pills .filter-btn").forEach(btn => {{
     const p = btn.dataset.provider;
     const color = p === "all" ? "#d97757" : (PROVIDER_COLORS[p] || "#a39e90");
     if (btn.classList.contains("active")) {{
@@ -1212,7 +1235,7 @@ function renderBarChart() {{
   barChart = new Chart(document.getElementById("barChart"), {{
     type: "bar",
     data: {{
-      labels: models.map(m => m.key),
+      labels: models.map(m => parseModelKey(m.key).name),
       datasets: [
         {{ label: "Input", data: models.map(m => m.input), backgroundColor: models.map(m => m.color + "cc"), borderRadius: 4 }},
         {{ label: "Output", data: models.map(m => m.output), backgroundColor: models.map(m => m.color + "55"), borderRadius: 4 }},
@@ -1234,7 +1257,7 @@ function renderDonutChart() {{
   donutChart = new Chart(document.getElementById("donutChart"), {{
     type: "doughnut",
     data: {{
-      labels: models.map(m => m.key),
+      labels: models.map(m => parseModelKey(m.key).name),
       datasets: [{{ data: models.map(m => m.output), backgroundColor: models.map(m => m.color), borderWidth: 0 }}],
     }},
     options: {{ ...chartDefaults, cutout: "65%" }}
@@ -1356,10 +1379,13 @@ const CHART_GRID_COLOR = "#3d3b36";
 const CHART_TEXT_COLOR = "#a39e90";
 
 function renderTimeline() {{
-  const {{ chartType, tokenType, groupBy, lookback }} = tlState;
+  const {{ chartType, tokenType, groupBy }} = tlState;
   const grouped = groupData(groupBy);
-  const labels = filterLabelsByLookback(fillGaps(Object.keys(grouped), groupBy), groupBy, lookback);
-  const visibleModels = getModelRows().map(m => ({{ key: m.key, name: m.key, color: m.color, provider: m.provider }}));
+  const labels = fillGaps(Object.keys(grouped), groupBy).sort();
+  const visibleModels = getModelRows().map(m => {{
+    const parsed = parseModelKey(m.key);
+    return {{ key: m.key, name: parsed.name, color: m.color, provider: m.provider }};
+  }});
 
   const datasets = visibleModels.map(m => {{
     const series = labels.map(l => {{
@@ -1418,15 +1444,7 @@ function renderTimeline() {{
   }});
 }}
 
-function initLookbackSelect() {{
-  const select = document.getElementById("lookbackSelect");
-  if (!select) return;
-  select.value = tlState.lookback;
-  select.addEventListener("change", e => {{
-    tlState.lookback = e.target.value;
-    renderTimeline();
-  }});
-}}
+
 
 // =========================================================================
 // Tables
@@ -1437,8 +1455,9 @@ function renderModelTable() {{
   tbody.innerHTML = models.map(m => {{
     const total = m.input + m.output;
     const pc = PROVIDER_COLORS[m.provider] || "#7d8590";
+    const parsed = parseModelKey(m.key);
     return `<tr data-provider="${{m.provider}}">
-      <td data-sort="${{m.key}}"><span class="model-badge" style="background:${{m.color}}20;color:${{m.color}};border-color:${{m.color}}40">${{m.key}}</span></td>
+      <td data-sort="${{parsed.name}}"><span class="model-badge" style="background:${{m.color}}20;color:${{m.color}};border-color:${{m.color}}40"><span class="model-name">${{parsed.name}}</span></span></td>
       <td data-sort="${{m.provider}}"><span class="provider-badge" style="color:${{pc}}">${{m.provider}}</span></td>
       <td class="mono right" data-sort="${{m.messages}}">${{fmtNum(m.messages)}}</td>
       <td class="mono right" data-sort="${{m.input}}">${{fmtNum(m.input)}}</td>
@@ -2241,7 +2260,7 @@ initNav();
 initFilterBar();
 initPROrgFilter();
 initSortable();
-initLookbackSelect();
+
 initAnalyzeButton();
 initSessionDetailModal();
 
