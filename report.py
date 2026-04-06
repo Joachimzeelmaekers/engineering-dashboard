@@ -357,6 +357,7 @@ def build_html(data: dict) -> str:
       width: 100%;
       border-collapse: collapse;
       font-size: 0.875rem;
+      min-width: 700px;
     }}
     thead th {{
       background: var(--bg);
@@ -378,7 +379,7 @@ def build_html(data: dict) -> str:
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
-      overflow: hidden;
+      overflow-x: auto;
     }}
     .table-card h3 {{ padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); margin: 0; }}
 
