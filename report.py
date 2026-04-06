@@ -536,14 +536,7 @@ def build_html(data: dict) -> str:
     .btn.active {{ background: var(--brand); color: #fff; }}
     .timeline-wrapper {{ position: relative; height: 500px; }}
 
-    footer {{
-      text-align: center;
-      padding: 1.5rem;
-      color: var(--text-muted);
-      font-size: 0.75rem;
-      border-top: 1px solid var(--border);
-      margin-top: auto;
-    }}
+
 
     .tab-bar {{
       display: flex;
@@ -936,7 +929,7 @@ def build_html(data: dict) -> str:
   </div>
 </main>
 
-<footer>Engineering Dashboard</footer>
+
 
 <script>
 // =========================================================================
