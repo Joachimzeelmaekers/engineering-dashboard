@@ -187,8 +187,6 @@ def build_html(data: dict) -> str:
     main {{
       flex: 1;
       overflow: auto;
-      max-width: 1280px;
-      margin: 0 auto;
       padding: 1.5rem 2rem;
     }}
 
@@ -357,7 +355,6 @@ def build_html(data: dict) -> str:
       width: 100%;
       border-collapse: collapse;
       font-size: 0.875rem;
-      min-width: 700px;
     }}
     thead th {{
       background: var(--bg);
