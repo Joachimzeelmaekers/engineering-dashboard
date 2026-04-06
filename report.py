@@ -187,6 +187,7 @@ def build_html(data: dict) -> str:
     main {{
       flex: 1;
       overflow: auto;
+      min-width: calc(100% - 219px);
       padding: 1.5rem 2rem;
     }}
 
