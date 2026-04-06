@@ -1,6 +1,14 @@
-# Engineering Report
+# Engineering Dashboard
 
 Generate a local HTML dashboard with AI tooling usage and GitHub contribution metrics.
+
+![Overview](docs/screenshots/overview.png)
+
+![Timeline](docs/screenshots/timeline.png)
+
+![Pull Requests](docs/screenshots/pullrequests.png)
+
+![Sessions](docs/screenshots/sessions.png)
 
 ## What it collects
 
