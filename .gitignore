@@ -3,3 +3,7 @@ __pycache__/
 output/
 data/
 config.json
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.astro/
+dashboard/public/data.json

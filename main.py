@@ -376,6 +376,23 @@ def main():
         print("GitHub provider disabled, skipping...")
 
 
+    # Output JSON for Astro frontend
+    json_data = {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "model_stats": data["model_stats"],
+        "provider_totals": data["provider_totals"],
+        "messages": data["messages"],
+        "total_messages": data["total_messages"],
+        "total_sessions": data["total_sessions"],
+        "month_cost_estimated": data.get("month_cost_estimated", 0),
+        "current_month": data.get("current_month", ""),
+        "github_prs": data.get("github_prs", {}),
+    }
+    json_out = os.path.join(REPORTS_DIR, "data.json")
+    with open(json_out, "w") as f:
+        json.dump(json_data, f)
+    print(f"  JSON data: {json_out}")
+
     print("Generating HTML...")
     html = build_html(data)
 

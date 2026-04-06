@@ -1,21 +1,28 @@
-.PHONY: help report serve open clean
+.PHONY: help report serve open clean dev build
 
 OUTPUT_DIR := output
 
 help:
 	@printf "%s\n" "Targets:" \
-		"  report - Generate output/latest.html from all provider data" \
-		"  serve  - Start local server, regenerates report on each request" \
-		"  open   - Open latest report in browser" \
-		"  clean  - Remove output/ directory"
+		"  report  - Generate data (JSON + legacy HTML)" \
+		"  dev     - Start Astro dev server (run report first)" \
+		"  build   - Build static Astro dashboard" \
+		"  serve   - Start legacy HTML server" \
+		"  open    - Open latest HTML report in browser" \
+		"  clean   - Remove output/ directory"
 
 report:
 	@mkdir -p $(OUTPUT_DIR)
 	python3 main.py
 
+dev: report
+	cd dashboard && npm run dev
+
+build: report
+	cd dashboard && npm run build
+
 serve: report
 	@printf "Starting server at http://localhost:9999\n"
-	@printf "Refresh browser to regenerate report\n"
 	python3 serve.py
 
 open: report
