@@ -3,8 +3,11 @@
 import json
 import os
 
-TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(TOOL_DIR, "config.json")
+from .paths import DEFAULT_CONFIG_FILE
+
+CONFIG_FILE = os.path.expanduser(
+    os.environ.get("ENGINEERING_DASHBOARD_CONFIG", str(DEFAULT_CONFIG_FILE))
+)
 
 _config = None
 

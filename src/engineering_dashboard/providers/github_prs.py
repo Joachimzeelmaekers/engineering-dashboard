@@ -12,6 +12,9 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from ..config import github_history_start_year
+from ..paths import DATA_DIR
+
 
 @dataclass
 class PullRequest:
@@ -49,7 +52,6 @@ class GitHubPRResult:
     source: str = "github-graphql"
 
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 CACHE_FILE = os.path.join(DATA_DIR, "cache_github_prs.json")
 REVIEW_CACHE_FILE = os.path.join(DATA_DIR, "cache_github_reviews.json")
 
@@ -445,7 +447,6 @@ def _dedupe_reviews(reviews: list[Review]) -> list[Review]:
 
 def _load_reviews() -> list[Review]:
     now = datetime.now(timezone.utc)
-    from config import github_history_start_year
     all_windows = _generate_half_year_windows(github_history_start_year(), now)
     # Filter to non-future windows
     all_windows = [w for w in all_windows if w.split("..")[0] <= now.strftime("%Y-%m-%d")]
@@ -588,8 +589,8 @@ def compute_stats(result: GitHubPRResult) -> dict:
         per_org[org]["total"] += 1
         if pr.state == "MERGED":
             per_org[org]["merged"] += 1
-        if pr.created_at:
-            per_org[org]["dates"].add(pr.created_at[:10])
+            if pr.created_at:
+                per_org[org]["dates"].add(pr.created_at[:10])
 
     # Compute working days vs non-working days per org
     today = datetime.now(timezone.utc).date()
@@ -620,11 +621,13 @@ def compute_stats(result: GitHubPRResult) -> dict:
                 weekend_days += 1
             d += timedelta(days=1)
 
-        # Count PRs created on workdays vs weekends
+        # Count merged PRs created on workdays vs weekends
         workday_prs = 0
         weekend_prs = 0
         for pr in prs:
             if (pr.org or "personal") != org:
+                continue
+            if pr.state != "MERGED":
                 continue
             if not pr.created_at:
                 continue
@@ -696,9 +699,45 @@ def compute_stats(result: GitHubPRResult) -> dict:
     # PRs over time (by month)
     by_month = {}
     for pr in prs:
-        if pr.created_at:
-            month = pr.created_at[:7]
-            by_month[month] = by_month.get(month, 0) + 1
+        if not pr.created_at:
+            continue
+        month = pr.created_at[:7]
+        if month not in by_month:
+            by_month[month] = {"total": 0, "merged": 0, "open": 0, "closed": 0}
+        by_month[month]["total"] += 1
+        if pr.state == "MERGED":
+            by_month[month]["merged"] += 1
+        elif pr.state == "OPEN":
+            by_month[month]["open"] += 1
+        else:
+            by_month[month]["closed"] += 1
+
+    def _parse_iso(ts: str | None) -> datetime | None:
+        if not ts:
+            return None
+        try:
+            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    merge_times = []
+    for pr in prs:
+        if pr.state != "MERGED":
+            continue
+        created_at = _parse_iso(pr.created_at)
+        merged_at = _parse_iso(pr.merged_at)
+        if not created_at or not merged_at:
+            continue
+        hours = (merged_at - created_at).total_seconds() / 3600
+        if hours >= 0:
+            merge_times.append(hours)
+
+    merge_times.sort()
+    merge_time_stats = {
+        "avg": round(sum(merge_times) / len(merge_times)) if merge_times else 0,
+        "p50": round(percentile(merge_times, 50)) if merge_times else 0,
+        "p90": round(percentile(merge_times, 90)) if merge_times else 0,
+    }
 
     return {
         "total": total,
@@ -709,6 +748,7 @@ def compute_stats(result: GitHubPRResult) -> dict:
         "per_org": org_stats,
         "size_stats": size_stats,
         "by_month": dict(sorted(by_month.items())),
+        "merge_time_stats": merge_time_stats,
         "prs": [_pr_to_dict(pr) for pr in prs],
         "reviews": _compute_review_stats(result.reviews),
     }

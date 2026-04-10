@@ -12,7 +12,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from .base import TokenMessage, ProviderResult
+from .base import TokenMessage, ProviderResult, TranscriptTurn
 
 PROVIDER_NAME = "codex"
 
@@ -45,12 +45,43 @@ def _get_configured_model(config_file: str) -> str:
     return "gpt-5.3-codex"
 
 
+def _extract_text(value) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                parts.append(item.strip())
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content") or item.get("message")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+        return "\n\n".join(parts)
+    if isinstance(value, dict):
+        for key in ("message", "content", "text"):
+            text = value.get(key)
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+    return ""
+
+
+def _timestamp_to_ms(value: str) -> int:
+    if not value:
+        return 0
+    try:
+        return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() * 1000)
+    except Exception:
+        return 0
+
+
 def load() -> ProviderResult:
     install_dirs = _installation_dirs()
     if not install_dirs:
         return ProviderResult(name=PROVIDER_NAME, source="not found")
 
     messages = []
+    session_transcripts = {}
     session_ids = set()
 
     files = []
@@ -90,6 +121,28 @@ def load() -> ProviderResult:
                         last_total_usage = info["total_token_usage"]
                 elif t == "event_msg" and isinstance(p, dict) and p.get("type") == "agent_message":
                     model = p.get("model") or p.get("modelId") or model
+
+                if t == "event_msg" and isinstance(p, dict):
+                    if p.get("type") == "user_message":
+                        text = _extract_text(p.get("message") or p.get("text_elements") or p.get("content"))
+                        if text:
+                            session_id = (meta or {}).get("id", "") or os.path.splitext(os.path.basename(filepath))[0]
+                            session_transcripts.setdefault(session_id, []).append(TranscriptTurn(
+                                role="user",
+                                text=text,
+                                timestamp_ms=_timestamp_to_ms(d.get("timestamp", "")),
+                                model="",
+                            ))
+                    elif p.get("type") == "task_complete":
+                        text = _extract_text(p.get("last_agent_message"))
+                        if text:
+                            session_id = (meta or {}).get("id", "") or os.path.splitext(os.path.basename(filepath))[0]
+                            session_transcripts.setdefault(session_id, []).append(TranscriptTurn(
+                                role="assistant",
+                                text=text,
+                                timestamp_ms=_timestamp_to_ms(d.get("timestamp", "")),
+                                model=model,
+                            ))
 
         if not meta and not last_total_usage:
             continue
@@ -131,6 +184,10 @@ def load() -> ProviderResult:
     return ProviderResult(
         name=PROVIDER_NAME,
         messages=messages,
+        session_transcripts={
+            session_id: sorted(turns, key=lambda turn: (turn.timestamp_ms, turn.role != "user"))
+            for session_id, turns in session_transcripts.items()
+        },
         sessions=len(session_ids),
         source="jsonl",
     )

@@ -37,6 +37,7 @@ export interface DashboardData {
   model_stats: Record<string, ModelStats>
   provider_totals: Record<string, ProviderTotal>
   messages: RawMessage[]
+  session_transcripts?: Record<string, SessionTranscriptTurn[]>
   total_messages: number
   total_sessions: number
   month_cost_estimated: number
@@ -53,8 +54,8 @@ export interface GitHubPRData {
   reviews: { total: number; reviews: GitHubReview[] }
   per_org: Record<string, { total: number }>
   size_stats: Record<string, Record<string, number>>
-  by_month: Record<string, { total: number; merged: number; open: number; closed: number }>
-  merge_time_stats: { avg: number; p50: number; p90: number }
+  by_month: Record<string, number | { total?: number; merged?: number; open?: number; closed?: number }>
+  merge_time_stats?: { avg: number; p50: number; p90: number } | null
 }
 
 export interface GitHubPR {
@@ -62,7 +63,7 @@ export interface GitHubPR {
   org: string
   state: string
   created_at: string
-  merged_at: string
+  merged_at: string | null
   additions: number
   deletions: number
   changed_files: number
@@ -87,4 +88,11 @@ export interface NormalizedMessage {
   timestamp_ms: number
   session_id: string
   project: string
+}
+
+export interface SessionTranscriptTurn {
+  role: string
+  text: string
+  timestamp_ms: number
+  model: string
 }

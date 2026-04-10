@@ -5,7 +5,7 @@ import json
 import os
 import sqlite3
 
-from .base import TokenMessage, ProviderResult
+from .base import TokenMessage, ProviderResult, TranscriptTurn
 
 PROVIDER_NAME = "opencode"
 
@@ -42,6 +42,62 @@ def _load_sessions_json(storage_dir: str):
     return sessions
 
 
+def _as_int(value) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return 0
+
+
+def _load_transcripts_sqlite(db_path: str) -> dict[str, list[TranscriptTurn]]:
+    transcripts = {}
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+
+    parts_by_message = {}
+    for row in conn.execute("SELECT message_id, data FROM part ORDER BY time_created"):
+        try:
+            data = json.loads(row[1])
+        except Exception:
+            continue
+
+        if data.get("type") != "text":
+            continue
+        text = data.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        parts_by_message.setdefault(row[0], []).append(text.strip())
+
+    for row in conn.execute("SELECT id, session_id, time_created, data FROM message ORDER BY time_created"):
+        try:
+            data = json.loads(row[3])
+        except Exception:
+            continue
+
+        role = data.get("role")
+        if role not in ("user", "assistant"):
+            continue
+
+        text = "\n\n".join(parts_by_message.get(row[0], []))
+        if not text:
+            continue
+
+        time_data = data.get("time") if isinstance(data.get("time"), dict) else {}
+        timestamp_ms = _as_int(time_data.get("created")) or _as_int(row[2])
+        model = data.get("modelID") if isinstance(data.get("modelID"), str) else data.get("model") if isinstance(data.get("model"), str) else ""
+        transcripts.setdefault(row[1], []).append(TranscriptTurn(
+            role=role,
+            text=text,
+            timestamp_ms=timestamp_ms,
+            model=model,
+        ))
+
+    conn.close()
+    return transcripts
+
+
 def load() -> ProviderResult:
     roots = [r for r in _candidate_roots() if os.path.exists(r)]
     if not roots:
@@ -49,6 +105,7 @@ def load() -> ProviderResult:
 
     sessions = {}
     raw_messages = []
+    session_transcripts = {}
     source = "json"
 
     for root in roots:
@@ -59,6 +116,8 @@ def load() -> ProviderResult:
         if os.path.exists(db_path):
             try:
                 root_sessions = _load_sessions_sqlite(db_path)
+                for session_id, turns in _load_transcripts_sqlite(db_path).items():
+                    session_transcripts.setdefault(session_id, []).extend(turns)
             except Exception:
                 root_sessions = _load_sessions_json(storage_dir)
         else:
@@ -129,6 +188,10 @@ def load() -> ProviderResult:
     return ProviderResult(
         name=PROVIDER_NAME,
         messages=messages,
+        session_transcripts={
+            session_id: sorted(turns, key=lambda turn: (turn.timestamp_ms, turn.role != "user"))
+            for session_id, turns in session_transcripts.items()
+        },
         sessions=len(session_ids),
         source=source,
     )

@@ -20,9 +20,20 @@ class TokenMessage:
 
 
 @dataclass
+class TranscriptTurn:
+    """Local-only transcript turn for session replay."""
+
+    role: str
+    text: str
+    timestamp_ms: int = 0
+    model: str = ""
+
+
+@dataclass
 class ProviderResult:
     """Result from a provider's load."""
     name: str
     messages: list = field(default_factory=list)   # list[TokenMessage]
+    session_transcripts: dict = field(default_factory=dict)  # dict[str, list[TranscriptTurn]]
     sessions: int = 0
     source: str = ""  # e.g. "sqlite", "jsonl"

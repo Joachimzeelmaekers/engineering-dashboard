@@ -56,6 +56,24 @@ Or run a local server with auto-regeneration:
 make serve
 ```
 
+For local frontend development:
+
+```bash
+make dev
+```
+
+## Project structure
+
+- `src/engineering_dashboard/`: Python source (CLI, aggregation, and providers)
+- `src/engineering_dashboard/providers/`: provider readers used by `main.py` to collect local usage data
+- `dashboard/`: Astro + React frontend that renders the generated `data.json`
+- `output/`: generated HTML reports and canonical JSON output
+- `data/`: local cache and historical snapshots
+
+You can run scripts directly with `python3 main.py` and `python3 serve.py`; the Makefile wraps these commands for convenience.
+
+The frontend is static. It reads `output/data.json` (copied into `dashboard/public/data.json` during report generation for local UI development).
+
 ## Notes
 
 - This tool reads local app data from common storage paths.

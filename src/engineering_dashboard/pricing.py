@@ -13,17 +13,19 @@ import os
 import time
 from urllib.request import Request, urlopen
 
+from .paths import DATA_DIR
+
 
 LLM_PRICES_URL = "https://www.llm-prices.com/current-v1.json"
 LLM_PRICES_CACHE = os.path.join(
-    os.path.dirname(__file__), "data", "cache", "llm-prices-current-v1.json"
+    DATA_DIR, "cache", "llm-prices-current-v1.json"
 )
 LLM_PRICES_TTL_SECONDS = 24 * 60 * 60
 LITELLM_PRICES_URL = (
     "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
 )
 LITELLM_PRICES_CACHE = os.path.join(
-    os.path.dirname(__file__), "data", "cache", "litellm-model-prices.json"
+    DATA_DIR, "cache", "litellm-model-prices.json"
 )
 
 PRICING = {

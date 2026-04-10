@@ -16,10 +16,10 @@ report:
 	python3 main.py
 
 dev: report
-	cd dashboard && npm run dev
+	cd dashboard && yarn dev
 
 build: report
-	cd dashboard && npm run build
+	cd dashboard && yarn build
 
 serve: report
 	@printf "Starting server at http://localhost:9999\n"

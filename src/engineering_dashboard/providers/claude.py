@@ -15,7 +15,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from .base import TokenMessage, ProviderResult
+from .base import TokenMessage, ProviderResult, TranscriptTurn
 
 PROVIDER_NAME = "claude-code"
 
@@ -67,12 +67,40 @@ def _date_to_ms(date_str: str) -> int:
     return int(dt.timestamp() * 1000)
 
 
+def _timestamp_to_ms(value: str) -> int:
+    if not value:
+        return 0
+    try:
+        return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() * 1000)
+    except Exception:
+        return 0
+
+
+def _extract_transcript_text(content) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, list):
+        return ""
+
+    parts = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "text":
+            continue
+        text = item.get("text")
+        if isinstance(text, str) and text.strip():
+            parts.append(text.strip())
+    return "\n\n".join(parts)
+
+
 def load() -> ProviderResult:
     claude_dirs = _claude_dirs()
     if not claude_dirs:
         return ProviderResult(name=PROVIDER_NAME, source="not found")
 
     messages = []
+    session_transcripts = {}
     session_ids = set()
     total_cache_sessions = 0
 
@@ -213,10 +241,23 @@ def load() -> ProviderResult:
                     except Exception:
                         continue
 
+                    msg = d.get("message")
+                    if isinstance(msg, dict):
+                        role = msg.get("role")
+                        sid = d.get("sessionId", "")
+                        if role in ("user", "assistant") and sid:
+                            text = _extract_transcript_text(msg.get("content"))
+                            if text:
+                                session_transcripts.setdefault(sid, []).append(TranscriptTurn(
+                                    role=role,
+                                    text=text,
+                                    timestamp_ms=_timestamp_to_ms(d.get("timestamp", "")),
+                                    model=msg.get("model", ""),
+                                ))
+
                     if d.get("type") != "assistant":
                         continue
 
-                    msg = d.get("message")
                     if not isinstance(msg, dict) or "usage" not in msg:
                         continue
 
@@ -265,6 +306,10 @@ def load() -> ProviderResult:
     return ProviderResult(
         name=PROVIDER_NAME,
         messages=messages,
+        session_transcripts={
+            session_id: sorted(turns, key=lambda turn: (turn.timestamp_ms, turn.role != "user"))
+            for session_id, turns in session_transcripts.items()
+        },
         sessions=total_sessions,
         source=source,
     )

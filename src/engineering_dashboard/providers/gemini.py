@@ -5,7 +5,7 @@ import json
 import os
 from datetime import datetime
 
-from .base import TokenMessage, ProviderResult
+from .base import TokenMessage, ProviderResult, TranscriptTurn
 
 PROVIDER_NAME = "gemini"
 
@@ -61,12 +61,29 @@ def _extract_tokens(msg: dict) -> tuple[int, int, int, int, int]:
     return inp, out, reasoning, cache_read, cache_write
 
 
+def _extract_text(value) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                parts.append(item.strip())
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+        return "\n\n".join(parts)
+    return ""
+
+
 def load() -> ProviderResult:
     files = _session_files()
     if not files:
         return ProviderResult(name=PROVIDER_NAME, source="not found")
 
     messages = []
+    session_transcripts = {}
     session_ids = set()
 
     for filepath in files:
@@ -84,12 +101,23 @@ def load() -> ProviderResult:
             if not isinstance(msg, dict):
                 continue
             role = msg.get("type")
+            transcript_role = "assistant" if role in ("gemini", "assistant") else "user" if role in ("user", "human") else ""
+            text = _extract_text(msg.get("content") or msg.get("text") or msg.get("parts"))
+            ts_ms = _to_ms(msg.get("timestamp"))
+            model = msg.get("model") or "gemini-cli"
+
+            if transcript_role and text:
+                session_transcripts.setdefault(sid, []).append(TranscriptTurn(
+                    role=transcript_role,
+                    text=text,
+                    timestamp_ms=ts_ms,
+                    model=model if transcript_role == "assistant" else "",
+                ))
+
             if role != "gemini":
                 continue
 
             inp, out, reasoning, cache_read, cache_write = _extract_tokens(msg)
-            ts_ms = _to_ms(msg.get("timestamp"))
-            model = msg.get("model") or "gemini-cli"
 
             messages.append(TokenMessage(
                 provider=PROVIDER_NAME,
@@ -108,6 +136,10 @@ def load() -> ProviderResult:
     return ProviderResult(
         name=PROVIDER_NAME,
         messages=messages,
+        session_transcripts={
+            session_id: sorted(turns, key=lambda turn: (turn.timestamp_ms, turn.role != "user"))
+            for session_id, turns in session_transcripts.items()
+        },
         sessions=len(session_ids),
         source="json",
     )
