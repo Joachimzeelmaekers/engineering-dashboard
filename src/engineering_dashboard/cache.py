@@ -9,10 +9,10 @@ import json
 import os
 from dataclasses import asdict
 
-from providers.base import TokenMessage, ProviderResult
+from .providers.base import TokenMessage, ProviderResult
+from .paths import DATA_DIR
 
-TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
-CACHE_DIR = os.path.join(TOOL_DIR, "data")
+CACHE_DIR = str(DATA_DIR)
 
 
 def _cache_path(provider_name: str) -> str:

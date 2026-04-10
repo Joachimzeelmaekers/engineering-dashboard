@@ -5,7 +5,7 @@ import json
 import os
 from datetime import datetime
 
-from .base import TokenMessage, ProviderResult
+from .base import TokenMessage, ProviderResult, TranscriptTurn
 
 PROVIDER_NAME = "continue"
 SESSIONS_GLOB = os.path.expanduser("~/.continue/sessions/*.json")
@@ -61,12 +61,29 @@ def _extract_tokens(item: dict, msg: dict) -> tuple[int, int, int, int, int]:
     return 0, 0, 0, 0, 0
 
 
+def _extract_text(value) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                parts.append(item.strip())
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+        return "\n\n".join(parts)
+    return ""
+
+
 def load() -> ProviderResult:
     files = [f for f in glob.glob(SESSIONS_GLOB) if os.path.basename(f) != "sessions.json"]
     if not files:
         return ProviderResult(name=PROVIDER_NAME, source="not found")
 
     messages = []
+    session_transcripts = {}
     session_ids = set()
 
     for filepath in files:
@@ -91,12 +108,22 @@ def load() -> ProviderResult:
             if not isinstance(msg, dict):
                 continue
             role = msg.get("role")
+            text = _extract_text(msg.get("content") or msg.get("text") or msg.get("parts"))
+            ts_ms = _to_ms(item.get("timestamp") or msg.get("timestamp") or item.get("createdAt"))
+            model = msg.get("model") or item.get("model") or "continue-assistant"
+
+            if role in ("user", "assistant", "system") and text:
+                session_transcripts.setdefault(sid, []).append(TranscriptTurn(
+                    role=role,
+                    text=text,
+                    timestamp_ms=ts_ms,
+                    model=model if role == "assistant" else "",
+                ))
+
             if role != "assistant":
                 continue
 
             inp, out, reasoning, cache_read, cache_write = _extract_tokens(item, msg)
-            ts_ms = _to_ms(item.get("timestamp") or msg.get("timestamp") or item.get("createdAt"))
-            model = msg.get("model") or item.get("model") or "continue-assistant"
 
             messages.append(TokenMessage(
                 provider=PROVIDER_NAME,
@@ -115,6 +142,10 @@ def load() -> ProviderResult:
     return ProviderResult(
         name=PROVIDER_NAME,
         messages=messages,
+        session_transcripts={
+            session_id: sorted(turns, key=lambda turn: (turn.timestamp_ms, turn.role != "user"))
+            for session_id, turns in session_transcripts.items()
+        },
         sessions=len(session_ids),
         source="json",
     )
