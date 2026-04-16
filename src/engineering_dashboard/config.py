@@ -1,4 +1,4 @@
-"""Configuration loader for the engineering report."""
+"""Configuration loader for the engineering dashboard."""
 
 import json
 import os
@@ -43,11 +43,6 @@ def github_history_start_year() -> int:
     return cfg.get("github", {}).get("history_start_year", 2015)
 
 
-def server_port() -> int:
+def server_port(default: int = 4321) -> int:
     cfg = load_config()
-    return int(os.environ.get("PORT", cfg.get("server", {}).get("port", 9999)))
-
-
-def max_reports() -> int:
-    cfg = load_config()
-    return cfg.get("max_reports", 3)
+    return int(os.environ.get("PORT", cfg.get("server", {}).get("port", default)))

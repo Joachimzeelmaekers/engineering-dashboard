@@ -15,7 +15,6 @@
     "history_start_year": 2020
   },
   "server": {
-    "port": 9999
-  },
-  "max_reports": 3
+    "port": 4321
+  }
 }

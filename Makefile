@@ -4,11 +4,11 @@ OUTPUT_DIR := output
 
 help:
 	@printf "%s\n" "Targets:" \
-		"  report  - Generate data (JSON + legacy HTML)" \
-		"  dev     - Start Astro dev server (run report first)" \
+		"  report  - Generate dashboard data JSON" \
+		"  dev     - Generate data and start Astro dev server" \
 		"  build   - Build static Astro dashboard" \
-		"  serve   - Start legacy HTML server" \
-		"  open    - Open latest HTML report in browser" \
+		"  serve   - Generate data, build, and preview Astro dashboard" \
+		"  open    - Open Astro dashboard URL in browser" \
 		"  clean   - Remove output/ directory"
 
 report:
@@ -21,12 +21,12 @@ dev: report
 build: report
 	cd dashboard && yarn build
 
-serve: report
-	@printf "Starting server at http://localhost:9999\n"
+serve:
+	@printf "Building + previewing dashboard at http://localhost:4321\n"
 	python3 serve.py
 
-open: report
-	@open output/latest.html
+open:
+	@open http://localhost:4321
 
 clean:
 	rm -rf $(OUTPUT_DIR)

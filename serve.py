@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve reports from the repo root."""
+"""Build and preview the Astro dashboard from the repo root."""
 
 from pathlib import Path
 import sys

@@ -11,11 +11,10 @@ from .providers.base import ProviderResult, TranscriptTurn
 from .providers import opencode, claude, cursor, codex, continueai, gemini, trae, windsurf, droid
 from .providers import github_prs
 from .pricing import estimate_cost
-from .report import build_html
-from .config import is_provider_enabled, is_github_enabled, max_reports
+from .config import is_provider_enabled, is_github_enabled
 from .paths import DATA_DIR as DATA_DIR_PATH, DASHBOARD_PUBLIC_DIR, OUTPUT_DIR
 
-REPORTS_DIR = str(OUTPUT_DIR)
+OUTPUT_JSON_DIR = str(OUTPUT_DIR)
 DATA_DIR = str(DATA_DIR_PATH)
 FRONTEND_PUBLIC_DIR = str(DASHBOARD_PUBLIC_DIR)
 
@@ -32,10 +31,6 @@ ALL_PROVIDERS = [
     ("droid", droid.load),
 ]
 PROVIDERS = [(name, fn) for name, fn in ALL_PROVIDERS if is_provider_enabled(name)]
-
-
-def fmt_tokens(n: int) -> str:
-    return f"{n:,}"
 
 
 def aggregate(results: list[ProviderResult]) -> dict:
@@ -338,19 +333,8 @@ def snapshot_data(results: list[ProviderResult]):
     print(f"  Data snapshot: {snapshot_file}")
 
 
-def _cleanup_reports(reports_dir: str):
-    """Keep only the latest N timestamped report files."""
-    import glob as g
-    keep = max_reports()
-    files = sorted(g.glob(os.path.join(reports_dir, "report_*.html")))
-    if len(files) > keep:
-        for old in files[:-keep]:
-            os.remove(old)
-            print(f"  Removed old report: {os.path.basename(old)}")
-
-
 def report_main():
-    os.makedirs(REPORTS_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_JSON_DIR, exist_ok=True)
 
     print("Loading providers...")
     fresh_results = []
@@ -415,7 +399,7 @@ def report_main():
         "current_month": data.get("current_month", ""),
         "github_prs": data.get("github_prs", {}),
     }
-    json_targets = [os.path.join(REPORTS_DIR, "data.json")]
+    json_targets = [os.path.join(OUTPUT_JSON_DIR, "data.json")]
     if os.path.isdir(FRONTEND_PUBLIC_DIR):
         json_targets.append(os.path.join(FRONTEND_PUBLIC_DIR, "data.json"))
 
@@ -424,25 +408,8 @@ def report_main():
             json.dump(json_data, f)
         print(f"  JSON data: {json_out}")
 
-    print("Generating HTML...")
-    html = build_html(data)
-
-    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    out_file = os.path.join(REPORTS_DIR, f"report_{ts}.html")
-    latest = os.path.join(REPORTS_DIR, "latest.html")
-
-    with open(out_file, "w") as f:
-        f.write(html)
-    with open(latest, "w") as f:
-        f.write(html)
-
-    # Clean up old reports, keep only the latest MAX_REPORTS
-    _cleanup_reports(REPORTS_DIR)
-
-    print(f"\nReport saved:")
-    print(f"  {out_file}")
-    print(f"  {latest}")
-    print(f"\nOpen with:  open {latest}")
+    print("\nDashboard data updated.")
+    print("Run `make dev` for live development or `make serve` to preview the built app.")
 
     # Summary
     ms = data["model_stats"]
@@ -468,8 +435,8 @@ def report_main():
 def main(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(prog="engineering-dashboard")
     subcommands = parser.add_subparsers(dest="command")
-    subcommands.add_parser("report", help="Generate dashboard data and reports")
-    subcommands.add_parser("serve", help="Serve the legacy HTML dashboard with auto-regeneration")
+    subcommands.add_parser("report", help="Generate dashboard data JSON")
+    subcommands.add_parser("serve", help="Build and preview the Astro dashboard")
 
     args = parser.parse_args(argv)
 

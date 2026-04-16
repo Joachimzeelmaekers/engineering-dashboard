@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate reports from the repo root."""
+"""Generate dashboard data from the repo root."""
 
 from pathlib import Path
 import sys

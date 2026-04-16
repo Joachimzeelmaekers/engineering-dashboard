@@ -1,6 +1,6 @@
 # Engineering Dashboard
 
-Generate a local HTML dashboard with AI tooling usage and GitHub contribution metrics.
+Generate a local shadcn/Astro dashboard with AI tooling usage and GitHub contribution metrics.
 
 ![Overview](docs/screenshots/overview.png)
 
@@ -38,41 +38,41 @@ cp config.example.json config.json
 
 2. Enable the providers you want in `config.json`.
 
-3. Generate report:
+3. Generate dashboard data:
 
 ```bash
 make report
 ```
 
-4. Open:
-
-```bash
-make open
-```
-
-Or run a local server with auto-regeneration:
-
-```bash
-make serve
-```
-
-For local frontend development:
+4. Start the dashboard (dev mode):
 
 ```bash
 make dev
+```
+
+Then open:
+
+```bash
+http://localhost:4321
+```
+
+For a production-like preview (build + preview server):
+
+```bash
+make serve
 ```
 
 ## Project structure
 
 - `src/engineering_dashboard/`: Python source (CLI, aggregation, and providers)
 - `src/engineering_dashboard/providers/`: provider readers used by `main.py` to collect local usage data
-- `dashboard/`: Astro + React frontend that renders the generated `data.json`
-- `output/`: generated HTML reports and canonical JSON output
+- `dashboard/`: Astro + React frontend (shadcn UI)
+- `output/`: canonical generated `data.json`
 - `data/`: local cache and historical snapshots
 
 You can run scripts directly with `python3 main.py` and `python3 serve.py`; the Makefile wraps these commands for convenience.
 
-The frontend is static. It reads `output/data.json` (copied into `dashboard/public/data.json` during report generation for local UI development).
+The frontend reads `/data.json`. Report generation writes data to `output/data.json` and mirrors it to `dashboard/public/data.json` for dev/build workflows.
 
 ## Notes
 
