@@ -10,6 +10,10 @@ Generate a local shadcn/Astro dashboard with AI tooling usage and GitHub contrib
 
 ![Sessions](docs/screenshots/sessions.png)
 
+![Models](docs/screenshots/models.png)
+
+![Projects](docs/screenshots/projects.png)
+
 ## What it collects
 
 - Provider usage (messages, sessions, token usage, estimated cost)
