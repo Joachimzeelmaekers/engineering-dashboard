@@ -30,7 +30,7 @@ const RANGE_OPTIONS = [
   { value: "all", label: "All time" },
 ]
 
-const VIRTUALIZED_TABLE_THRESHOLD = 80
+const VIRTUALIZED_TABLE_THRESHOLD = Number.POSITIVE_INFINITY
 
 type PRMonthSummary = { total: number; merged: number; open: number; closed: number }
 type PRRepoSummary = { total: number; merged: number; open: number; closed: number }
@@ -926,6 +926,10 @@ function TableNumber({ value }: { value: number }) {
   return <span title={fmtNum(value)}>{fmtAxis(value)}</span>
 }
 
+function OverflowText({ value, className }: { value: string; className?: string }) {
+  return <span className={`block overflow-hidden text-ellipsis whitespace-nowrap ${className || ""}`} title={value}>{value}</span>
+}
+
 /* ========== Overview ========== */
 function OverviewPage({ totals, modelRows, providerRows, globalRange }: {
   totals: { msgs: number; inp: number; out: number; rea: number; cr: number; cost: number; sessions: number }
@@ -1179,7 +1183,7 @@ function SessionsPage({ rows, messages, sessionTranscripts }: { rows: ReturnType
       key: "session_id",
       width: "minmax(160px, 1.2fr)",
       header: <SortButton label="Session" sortKey="session_id" sortConfig={sortConfig} onSort={requestSort} />,
-      renderCell: (row) => <div className="font-mono text-xs truncate">{row.session_id}</div>,
+      renderCell: (row) => <OverflowText value={row.session_id} className="max-w-[24rem] font-mono text-xs" />,
     },
     {
       key: "provider",
@@ -1195,7 +1199,7 @@ function SessionsPage({ rows, messages, sessionTranscripts }: { rows: ReturnType
       key: "project",
       width: "minmax(220px, 1.5fr)",
       header: <SortButton label="Project" sortKey="project" sortConfig={sortConfig} onSort={requestSort} />,
-      renderCell: (row) => <div className="truncate text-xs text-muted-foreground" title={row.project}>{row.project}</div>,
+      renderCell: (row) => <OverflowText value={row.project} className="max-w-[36rem] text-xs text-muted-foreground" />,
     },
     {
       key: "model_count",
@@ -1298,13 +1302,17 @@ function SessionsPage({ rows, messages, sessionTranscripts }: { rows: ReturnType
                       className="cursor-pointer"
                       data-state={selectedSessionKey === sessionKey ? "selected" : undefined}
                     >
-                      <TableCell className="font-mono text-xs max-w-32 truncate">{s.session_id}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        <OverflowText value={s.session_id} className="max-w-[24rem]" />
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline" style={{ color: PROVIDER_COLORS[s.provider] || "#a39e90" }}>
                           {s.provider}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-48 truncate" title={s.project}>{s.project}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        <OverflowText value={s.project} className="max-w-[36rem]" />
+                      </TableCell>
                       <TableCell className="text-right font-mono"><TableNumber value={s.model_count} /></TableCell>
                       <TableCell className="text-right font-mono"><TableNumber value={s.messages} /></TableCell>
                       <TableCell className="text-right font-mono"><TableNumber value={s.input} /></TableCell>
@@ -1889,7 +1897,7 @@ function ProjectsPage({ rows }: { rows: ReturnType<typeof getProjectRows> }) {
       key: "name",
       width: "minmax(260px, 1.8fr)",
       header: <SortButton label="Project" sortKey="name" sortConfig={sortConfig} onSort={requestSort} />,
-      renderCell: (row) => <div className="truncate font-mono text-xs text-muted-foreground" title={row.name}>{row.name}</div>,
+      renderCell: (row) => <OverflowText value={row.name} className="max-w-[44rem] font-mono text-xs text-muted-foreground" />,
     },
     {
       key: "messages",
@@ -1956,7 +1964,9 @@ function ProjectsPage({ rows }: { rows: ReturnType<typeof getProjectRows> }) {
               <TableBody>
                 {sortedRows.map((r) => (
                   <TableRow key={r.name}>
-                    <TableCell className="font-mono text-xs text-muted-foreground max-w-96 truncate" title={r.name}>{r.name}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      <OverflowText value={r.name} className="max-w-[44rem]" />
+                    </TableCell>
                     <TableCell className="text-right font-mono"><TableNumber value={r.messages} /></TableCell>
                     <TableCell className="text-right font-mono"><TableNumber value={r.input} /></TableCell>
                     <TableCell className="text-right font-mono"><TableNumber value={r.output} /></TableCell>
@@ -2279,7 +2289,7 @@ function PRDetailsPage({
       key: "repo",
       width: "minmax(220px, 1.7fr)",
       header: <SortButton label="Repository" sortKey="repo" sortConfig={repoSortConfig} onSort={requestRepoSort} />,
-      renderCell: (row) => <div className="font-mono text-sm">{row.repo}</div>,
+      renderCell: (row) => <OverflowText value={row.repo} className="max-w-[44rem] font-mono text-sm" />,
     },
     {
       key: "total",
@@ -2396,7 +2406,9 @@ function PRDetailsPage({
                 <TableBody>
                   {sortedProjects.map((project) => (
                     <TableRow key={project.repo}>
-                      <TableCell className="font-mono text-sm">{project.repo}</TableCell>
+                      <TableCell className="font-mono text-sm">
+                        <OverflowText value={project.repo} className="max-w-[44rem]" />
+                      </TableCell>
                       <TableCell className="text-right font-mono"><TableNumber value={project.total} /></TableCell>
                       <TableCell className="text-right font-mono"><TableNumber value={project.merged} /></TableCell>
                       <TableCell className="text-right font-mono"><TableNumber value={project.open} /></TableCell>
