@@ -33,6 +33,7 @@ PRICING = {
     # Claude (Anthropic) — used by Claude Code
     # Format: (base_input, output, cache_read, cache_write_5m)
     # -------------------------------------------------------------------------
+    "claude-opus-4-7":             (5.00, 25.00, 0.50, 6.25),
     "claude-opus-4-6":             (5.00, 25.00, 0.50, 6.25),
     "claude-opus-4-5-20251101":    (5.00, 25.00, 0.50, 6.25),
     "claude-opus-4-1":             (15.00, 75.00, 1.50, 18.75),
@@ -68,6 +69,9 @@ PRICING = {
     # -------------------------------------------------------------------------
     # OpenAI — used by OpenCode and potentially Codex
     # -------------------------------------------------------------------------
+    "gpt-5.5":             (5.00, 30.00, 0.50, 0.0),
+    "gpt-5.5-long":        (10.00, 45.00, 1.00, 0.0),
+    "gpt-5.5-pro":         (30.00, 180.00, 0.0, 0.0),
     "gpt-5.4-codex":       (2.50, 15.00, 0.25, 0.0),
     "gpt-5.4":             (2.50, 15.00, 0.25, 0.0),
     "gpt-5.4-long":        (5.00, 22.50, 0.50, 0.0),
@@ -96,6 +100,7 @@ MODEL_ALIASES = {
     # Claude naming differences
     "claude-sonnet-4-6": "claude-sonnet-4.5",
     "claude-sonnet-4-5-20250929": "claude-sonnet-4.5",
+    "claude-opus-4-7": "claude-opus-4-5",
     "claude-opus-4-6": "claude-opus-4-5",
     "claude-opus-4-5-20251101": "claude-opus-4-5",
     "claude-haiku-4-5-20251001": "claude-4.5-haiku",
@@ -105,6 +110,7 @@ MODEL_ALIASES = {
     "gpt-5.1-codex": "gpt-5.1-codex",
     "gpt-5.1-codex-max": "gpt-5.1-codex",
     "gpt-5.2-codex": "gpt-5.2",
+    "gpt-5.5-long": "gpt-5.5-272k",
     "gpt-5.4-codex": "gpt-5.4",
     "gpt-5.4-long": "gpt-5.4-272k",
     "gpt-5.4-pro-long": "gpt-5.4-pro-272k",
