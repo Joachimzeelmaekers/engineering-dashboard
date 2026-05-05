@@ -33,12 +33,25 @@ export function getGlobalCutoff(range: string): number {
 export function filterMessages(
   messages: NormalizedMessage[],
   provider: string,
-  range: string
+  range: string,
+  startDate?: string,
+  endDate?: string
 ): NormalizedMessage[] {
-  const cutoff = getGlobalCutoff(range)
+  const cutoff = range === "custom" ? 0 : getGlobalCutoff(range)
+  const customStartMs = startDate ? Date.parse(`${startDate}T00:00:00.000Z`) : Number.NaN
+  const customEndMs = endDate ? Date.parse(`${endDate}T23:59:59.999Z`) : Number.NaN
+
   return messages.filter((m) => {
     if (provider !== "all" && m.provider !== provider) return false
-    if (!cutoff || !m.timestamp_ms) return true
+    if (!m.timestamp_ms) return true
+
+    if (range === "custom") {
+      if (Number.isFinite(customStartMs) && m.timestamp_ms < customStartMs) return false
+      if (Number.isFinite(customEndMs) && m.timestamp_ms > customEndMs) return false
+      return true
+    }
+
+    if (!cutoff) return true
     return m.timestamp_ms >= cutoff
   })
 }

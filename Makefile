@@ -1,15 +1,19 @@
-.PHONY: help report serve open clean dev build
+.PHONY: help install report serve open clean dev build
 
 OUTPUT_DIR := output
 
 help:
 	@printf "%s\n" "Targets:" \
+		"  install - Install dashboard dependencies" \
 		"  report  - Generate dashboard data JSON" \
 		"  dev     - Generate data and start Astro dev server" \
 		"  build   - Build static Astro dashboard" \
 		"  serve   - Generate data, build, and preview Astro dashboard" \
 		"  open    - Open Astro dashboard URL in browser" \
 		"  clean   - Remove output/ directory"
+
+install:
+	cd dashboard && yarn install
 
 report:
 	@mkdir -p $(OUTPUT_DIR)

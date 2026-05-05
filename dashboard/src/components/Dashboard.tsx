@@ -27,6 +27,7 @@ const RANGE_OPTIONS = [
   { value: "180d", label: "Last 6 months" },
   { value: "1y", label: "Last 1 year" },
   { value: "2y", label: "Last 2 years" },
+  { value: "custom", label: "Custom range" },
   { value: "all", label: "All time" },
 ]
 
@@ -79,6 +80,12 @@ type PROrgOption = { value: string; label: string }
 type SortDirection = "asc" | "desc"
 type SortValue = string | number
 type SortConfig<K extends string> = { key: K; direction: SortDirection }
+type ConversationRole = "assistant" | "user" | "system"
+type ConversationTurn = SessionTranscriptTurn & {
+  role: ConversationRole
+  order: number
+  matchedMessage: NormalizedMessage | undefined
+}
 
 function getPercentile(values: number[], percentile: number) {
   if (!values.length) return 0
@@ -201,6 +208,38 @@ function fmtElapsed(ms: number) {
 
   const days = hours / 24
   return `${days.toFixed(days >= 10 ? 0 : 1)}d`
+}
+
+function getConversationRole(role: string): ConversationRole {
+  if (role === "assistant" || role === "user") return role
+  return "system"
+}
+
+function getConversationRoleStyles(role: ConversationRole) {
+  if (role === "user") {
+    return {
+      label: "User",
+      marker: "bg-primary text-primary-foreground",
+      card: "border-primary/30 bg-primary/5",
+      accent: "bg-primary",
+    }
+  }
+
+  if (role === "assistant") {
+    return {
+      label: "Assistant",
+      marker: "bg-foreground text-background",
+      card: "border-border bg-card",
+      accent: "bg-foreground",
+    }
+  }
+
+  return {
+    label: "System",
+    marker: "bg-muted-foreground text-background",
+    card: "border-border bg-muted/40",
+    accent: "bg-muted-foreground",
+  }
 }
 
 function getEmptySizeSummary(): PRSizeSummary {
@@ -457,13 +496,18 @@ export default function Dashboard({ data }: { data: DashboardData }) {
   const [page, setPage] = useState("overview")
   const [activeProvider, setActiveProvider] = useState("all")
   const [globalRange, setGlobalRange] = useState("90d")
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
   const [tlGroupBy, setTlGroupBy] = useState("day")
   const [tlTokenType, setTlTokenType] = useState("total")
   const [tlChartType, setTlChartType] = useState("area")
   const [prOrgFilter, setPrOrgFilter] = useState("all")
 
   const allMessages = useMemo(() => normalizeMessages(data.messages), [data.messages])
-  const filtered = useMemo(() => filterMessages(allMessages, activeProvider, globalRange), [allMessages, activeProvider, globalRange])
+  const filtered = useMemo(
+    () => filterMessages(allMessages, activeProvider, globalRange, startDate, endDate),
+    [allMessages, activeProvider, globalRange, startDate, endDate]
+  )
   const activeProviders = useMemo(() => Object.keys(data.provider_totals).sort(), [data.provider_totals])
   const modelRows = useMemo(() => getModelRows(filtered, data.model_stats), [filtered, data.model_stats])
   const sessionRows = useMemo(() => getSessionRows(filtered, data.model_stats), [filtered, data.model_stats])
@@ -567,6 +611,25 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                 ))}
               </SelectContent>
             </Select>
+            {globalRange === "custom" && (
+              <div className="flex items-center gap-2 shrink-0">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => setStartDate(event.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                  aria-label="Start date"
+                />
+                <span className="text-xs text-muted-foreground">to</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(event) => setEndDate(event.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                  aria-label="End date"
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -1334,6 +1397,69 @@ function SessionsPage({ rows, messages, sessionTranscripts }: { rows: ReturnType
   )
 }
 
+function MetricPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-muted/45 px-2.5 py-1.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="ml-2 font-mono text-xs text-foreground">{value}</span>
+    </div>
+  )
+}
+
+function ConversationTurnCard({
+  turn,
+  previousTimestamp,
+  provider,
+}: {
+  turn: ConversationTurn
+  previousTimestamp?: number
+  provider: string
+}) {
+  const roleStyles = getConversationRoleStyles(turn.role)
+  const gapMs = previousTimestamp && turn.timestamp_ms ? turn.timestamp_ms - previousTimestamp : 0
+  const matchedMessage = turn.matchedMessage
+  const modelName = turn.model ? parseModelKey(turn.model.includes("[") ? turn.model : `${turn.model} [${provider}]`).name : null
+
+  return (
+    <div className="relative pl-10">
+      <div className="absolute left-[15px] top-9 bottom-[-18px] w-px bg-border" />
+      <div className={`absolute left-0 top-3 flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold shadow-sm ${roleStyles.marker}`}>
+        {turn.order}
+      </div>
+      <div className={`overflow-hidden rounded-xl border shadow-sm ${roleStyles.card}`}>
+        <div className={`h-1 ${roleStyles.accent}`} />
+        <div className="px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="text-sm font-semibold text-foreground">{roleStyles.label}</span>
+              {modelName ? <Badge variant="outline">{modelName}</Badge> : null}
+              <span>{fmtDateTime(turn.timestamp_ms)}</span>
+              {gapMs > 0 ? <span>{fmtGap(gapMs)}</span> : null}
+            </div>
+            {matchedMessage ? (
+              <div className="font-mono text-xs text-muted-foreground">
+                {fmtCompact(matchedMessage.input + matchedMessage.output)} tokens
+              </div>
+            ) : null}
+          </div>
+
+          <pre className="mt-3 max-w-none whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">{turn.text}</pre>
+
+          {matchedMessage ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <MetricPill label="Input" value={fmtNum(matchedMessage.input)} />
+              <MetricPill label="Output" value={fmtNum(matchedMessage.output)} />
+              <MetricPill label="Reasoning" value={fmtNum(matchedMessage.reasoning)} />
+              <MetricPill label="Cache" value={fmtNum(matchedMessage.cache_read)} />
+              <MetricPill label="Cost" value={fmtCost(matchedMessage.cost_logged)} />
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SessionReplayPanel({
   row,
   messages,
@@ -1386,7 +1512,7 @@ function SessionReplayPanel({
     }
   })
 
-  const conversation = (() => {
+  const conversation: ConversationTurn[] = (() => {
     if (!transcriptTurns.length) return []
 
     let assistantMessageIndex = 0
@@ -1394,7 +1520,7 @@ function SessionReplayPanel({
       .slice()
       .sort((a, b) => (a.timestamp_ms || 0) - (b.timestamp_ms || 0))
       .map((turn, index) => {
-        const normalizedRole = turn.role === "assistant" ? "assistant" : turn.role === "user" ? "user" : "system"
+        const normalizedRole = getConversationRole(turn.role)
         const matchedMessage = normalizedRole === "assistant" ? messages[assistantMessageIndex++] : undefined
         return {
           ...turn,
@@ -1404,23 +1530,30 @@ function SessionReplayPanel({
         }
       })
   })()
+  const conversationCounts = conversation.reduce<Record<ConversationRole, number>>(
+    (acc, turn) => {
+      acc[turn.role] += 1
+      return acc
+    },
+    { assistant: 0, user: 0, system: 0 }
+  )
   const shouldVirtualizeConversation = conversation.length > 24
   const shouldVirtualizeTimeline = timeline.length > 40
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60" onClick={onClose}>
       <div
-        className="absolute inset-y-0 right-0 h-full w-full max-w-3xl overflow-y-auto border-l border-border bg-background shadow-2xl"
+        className="absolute inset-y-0 right-0 h-full w-full max-w-5xl overflow-y-auto border-l border-border bg-background shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-6 py-4 backdrop-blur">
           <div className="flex items-start justify-between gap-4">
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Session replay</p>
-              <h3 className="mt-1 text-lg font-bold">{row.provider}:{row.session_id}</h3>
+              <h3 className="mt-1 truncate font-mono text-sm font-bold md:text-base">{row.provider}:{row.session_id}</h3>
               <p className="mt-1 text-sm text-muted-foreground">{row.project || "unknown project"}</p>
             </div>
-            <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+            <Button className="shrink-0" variant="outline" size="sm" onClick={onClose}>Close</Button>
           </div>
         </div>
 
@@ -1432,14 +1565,11 @@ function SessionReplayPanel({
             <StatCard label="Duration" value={fmtElapsed(Math.max(0, row.end_ms - row.start_ms))} sub={fmtDateTime(row.end_ms)} color="#4f7f78" />
           </div>
 
-          <Card>
-            <CardHeader><CardTitle>How to read this</CardTitle></CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              {conversation.length
-                ? "This replay uses local-only transcript data from your machine. Those generated transcript files live in gitignored paths, so they are available in the dashboard without being committed."
-                : "This provider session only has token metadata available right now, so the replay below falls back to the assistant-turn timeline instead of literal prompt/response text."}
-            </CardContent>
-          </Card>
+          <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            {conversation.length
+              ? `Showing ${fmtNum(conversation.length)} transcript turns: ${fmtNum(conversationCounts.user)} user, ${fmtNum(conversationCounts.assistant)} assistant, ${fmtNum(conversationCounts.system)} system.`
+              : "Only token metadata is available for this session, so the detail view falls back to the assistant-turn timeline."}
+          </div>
 
           <Card>
             <CardHeader><CardTitle>Models used in this session</CardTitle></CardHeader>
@@ -1463,105 +1593,36 @@ function SessionReplayPanel({
 
           {conversation.length > 0 ? (
             <Card>
-              <CardHeader><CardTitle>Conversation replay</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle>Conversation replay</CardTitle>
+                <p className="text-sm text-muted-foreground">Full transcript, grouped as a readable turn-by-turn timeline.</p>
+              </CardHeader>
               <CardContent>
                 {shouldVirtualizeConversation ? (
                   <VirtualizedStack
                     items={conversation}
                     getKey={(turn, index) => `${turn.role}:${turn.order}:${turn.timestamp_ms}:${index}`}
-                    estimateHeight={(turn) => 120 + Math.min(1200, Math.ceil(turn.text.length / 90) * 24) + (turn.matchedMessage ? 150 : 0)}
-                    maxHeightClassName="max-h-[70vh]"
-                    renderItem={(turn, index) => {
-                      const previous = conversation[index - 1]
-                      const gapMs = previous?.timestamp_ms && turn.timestamp_ms ? turn.timestamp_ms - previous.timestamp_ms : 0
-                      const matchedMessage = turn.matchedMessage
-
-                      return (
-                        <div className={`flex ${turn.role === "user" ? "justify-end" : "justify-start"}`}>
-                          <div className={`max-w-[85%] rounded-xl border px-4 py-3 ${turn.role === "user" ? "border-primary/30 bg-primary/10" : turn.role === "assistant" ? "border-border bg-card" : "border-border bg-muted/40"}`}>
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                              <span className="font-semibold uppercase tracking-wider">{turn.role}</span>
-                              {turn.model && <Badge variant="outline">{parseModelKey(turn.model.includes("[") ? turn.model : `${turn.model} [${row.provider}]`).name}</Badge>}
-                              <span>{fmtDateTime(turn.timestamp_ms)}</span>
-                              {gapMs > 0 && <span>{fmtGap(gapMs)}</span>}
-                            </div>
-                            <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">{turn.text}</pre>
-
-                            {matchedMessage && (
-                              <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
-                                <div className="rounded-md bg-muted/40 px-3 py-2">
-                                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Input</div>
-                                  <div className="font-mono text-sm">{fmtNum(matchedMessage.input)}</div>
-                                </div>
-                                <div className="rounded-md bg-muted/40 px-3 py-2">
-                                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Output</div>
-                                  <div className="font-mono text-sm">{fmtNum(matchedMessage.output)}</div>
-                                </div>
-                                <div className="rounded-md bg-muted/40 px-3 py-2">
-                                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Reasoning</div>
-                                  <div className="font-mono text-sm">{fmtNum(matchedMessage.reasoning)}</div>
-                                </div>
-                                <div className="rounded-md bg-muted/40 px-3 py-2">
-                                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Cache Read</div>
-                                  <div className="font-mono text-sm">{fmtNum(matchedMessage.cache_read)}</div>
-                                </div>
-                                <div className="rounded-md bg-muted/40 px-3 py-2">
-                                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Logged Cost</div>
-                                  <div className="font-mono text-sm">{fmtCost(matchedMessage.cost_logged)}</div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    }}
+                    estimateHeight={(turn) => 110 + Math.min(1400, Math.ceil(turn.text.length / 100) * 24) + (turn.matchedMessage ? 64 : 0)}
+                    maxHeightClassName="max-h-[76vh]"
+                    rowGap={18}
+                    renderItem={(turn, index) => (
+                      <ConversationTurnCard
+                        turn={turn}
+                        previousTimestamp={conversation[index - 1]?.timestamp_ms}
+                        provider={row.provider}
+                      />
+                    )}
                   />
                 ) : (
-                  <div className="space-y-3">
-                    {conversation.map((turn, index) => {
-                      const previous = conversation[index - 1]
-                      const gapMs = previous?.timestamp_ms && turn.timestamp_ms ? turn.timestamp_ms - previous.timestamp_ms : 0
-                      const matchedMessage = turn.matchedMessage
-
-                      return (
-                        <div key={`${turn.role}:${turn.order}:${turn.timestamp_ms}:${index}`} className={`flex ${turn.role === "user" ? "justify-end" : "justify-start"}`}>
-                          <div className={`max-w-[85%] rounded-xl border px-4 py-3 ${turn.role === "user" ? "border-primary/30 bg-primary/10" : turn.role === "assistant" ? "border-border bg-card" : "border-border bg-muted/40"}`}>
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                              <span className="font-semibold uppercase tracking-wider">{turn.role}</span>
-                              {turn.model && <Badge variant="outline">{parseModelKey(turn.model.includes("[") ? turn.model : `${turn.model} [${row.provider}]`).name}</Badge>}
-                              <span>{fmtDateTime(turn.timestamp_ms)}</span>
-                              {gapMs > 0 && <span>{fmtGap(gapMs)}</span>}
-                            </div>
-                            <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">{turn.text}</pre>
-
-                            {matchedMessage && (
-                              <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
-                                <div className="rounded-md bg-muted/40 px-3 py-2">
-                                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Input</div>
-                                  <div className="font-mono text-sm">{fmtNum(matchedMessage.input)}</div>
-                                </div>
-                                <div className="rounded-md bg-muted/40 px-3 py-2">
-                                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Output</div>
-                                  <div className="font-mono text-sm">{fmtNum(matchedMessage.output)}</div>
-                                </div>
-                                <div className="rounded-md bg-muted/40 px-3 py-2">
-                                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Reasoning</div>
-                                  <div className="font-mono text-sm">{fmtNum(matchedMessage.reasoning)}</div>
-                                </div>
-                                <div className="rounded-md bg-muted/40 px-3 py-2">
-                                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Cache Read</div>
-                                  <div className="font-mono text-sm">{fmtNum(matchedMessage.cache_read)}</div>
-                                </div>
-                                <div className="rounded-md bg-muted/40 px-3 py-2">
-                                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Logged Cost</div>
-                                  <div className="font-mono text-sm">{fmtCost(matchedMessage.cost_logged)}</div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
+                  <div className="space-y-5">
+                    {conversation.map((turn, index) => (
+                      <ConversationTurnCard
+                        key={`${turn.role}:${turn.order}:${turn.timestamp_ms}:${index}`}
+                        turn={turn}
+                        previousTimestamp={conversation[index - 1]?.timestamp_ms}
+                        provider={row.provider}
+                      />
+                    ))}
                   </div>
                 )}
               </CardContent>
