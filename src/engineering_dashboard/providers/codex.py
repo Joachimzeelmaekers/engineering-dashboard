@@ -98,7 +98,7 @@ def load() -> ProviderResult:
             if filepath.startswith(r):
                 root = r
                 break
-        model = models_by_root.get(root, "gpt-5.3-codex")
+        model = models_by_root.get(root, "gpt-5.6")
 
         meta = None
         last_total_usage = None
