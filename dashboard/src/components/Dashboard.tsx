@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import type { DashboardData, NormalizedMessage, SessionTranscriptTurn } from "@/lib/types"
-import { normalizeMessages, filterMessages, getModelRows, getSessionRows, getProviderRows, getProjectRows, getTimelineData } from "@/lib/data"
+import { normalizeMessages, filterMessages, getGlobalCutoff, getModelRows, getSessionRows, getProviderRows, getProjectRows, getTimelineData } from "@/lib/data"
 import { PROVIDER_COLORS, parseModelKey, fmtNum, fmtCompact, fmtCost, fmtDateTime } from "@/lib/constants"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -492,6 +492,31 @@ function getMergeTimeRows(prs: DashboardData["github_prs"]["prs"], months: strin
   })
 }
 
+function filterGitHubDateRange<T>(
+  rows: T[],
+  range: string,
+  getDate: (row: T) => string,
+  startDate: string,
+  endDate: string
+): T[] {
+  if (range === "all") return rows
+
+  const cutoff = range === "custom" ? 0 : getGlobalCutoff(range)
+  const customStart = startDate ? Date.parse(`${startDate}T00:00:00.000Z`) : Number.NaN
+  const customEnd = endDate ? Date.parse(`${endDate}T23:59:59.999Z`) : Number.NaN
+
+  return rows.filter((row) => {
+    const timestamp = Date.parse(getDate(row))
+    if (!Number.isFinite(timestamp)) return false
+    if (range === "custom") {
+      if (Number.isFinite(customStart) && timestamp < customStart) return false
+      if (Number.isFinite(customEnd) && timestamp > customEnd) return false
+      return true
+    }
+    return !cutoff || timestamp >= cutoff
+  })
+}
+
 export default function Dashboard({ data }: { data: DashboardData }) {
   const [page, setPage] = useState("overview")
   const [activeProvider, setActiveProvider] = useState("all")
@@ -502,6 +527,9 @@ export default function Dashboard({ data }: { data: DashboardData }) {
   const [tlTokenType, setTlTokenType] = useState("total")
   const [tlChartType, setTlChartType] = useState("area")
   const [prOrgFilter, setPrOrgFilter] = useState("all")
+  const [githubRange, setGithubRange] = useState("all")
+  const [githubStartDate, setGithubStartDate] = useState("")
+  const [githubEndDate, setGithubEndDate] = useState("")
 
   const allMessages = useMemo(() => normalizeMessages(data.messages), [data.messages])
   const filtered = useMemo(
@@ -515,14 +543,22 @@ export default function Dashboard({ data }: { data: DashboardData }) {
   const projectRows = useMemo(() => getProjectRows(filtered), [filtered])
   const timelineData = useMemo(() => getTimelineData(filtered, tlGroupBy, tlTokenType), [filtered, tlGroupBy, tlTokenType])
   const prOrgOptions = useMemo(() => getPROrgOptions(data.github_prs), [data.github_prs])
-  const filteredPRs = useMemo(() => {
-    const prs = data.github_prs?.prs || []
-    return prOrgFilter === "all" ? prs : prs.filter((pr) => (pr.org || "personal") === prOrgFilter)
-  }, [data.github_prs, prOrgFilter])
-  const filteredReviews = useMemo(() => {
-    const reviews = data.github_prs?.reviews?.reviews || []
-    return prOrgFilter === "all" ? reviews : reviews.filter((review) => (review.org || "personal") === prOrgFilter)
-  }, [data.github_prs, prOrgFilter])
+  const rangedPRs = useMemo(
+    () => filterGitHubDateRange(data.github_prs?.prs || [], githubRange, (pr) => pr.created_at, githubStartDate, githubEndDate),
+    [data.github_prs, githubRange, githubStartDate, githubEndDate]
+  )
+  const rangedReviews = useMemo(
+    () => filterGitHubDateRange(data.github_prs?.reviews?.reviews || [], githubRange, (review) => review.review_created_at, githubStartDate, githubEndDate),
+    [data.github_prs, githubRange, githubStartDate, githubEndDate]
+  )
+  const filteredPRs = useMemo(
+    () => prOrgFilter === "all" ? rangedPRs : rangedPRs.filter((pr) => (pr.org || "personal") === prOrgFilter),
+    [rangedPRs, prOrgFilter]
+  )
+  const filteredReviews = useMemo(
+    () => prOrgFilter === "all" ? rangedReviews : rangedReviews.filter((review) => (review.org || "personal") === prOrgFilter),
+    [rangedReviews, prOrgFilter]
+  )
   const prStats = useMemo(() => computePRStats(filteredPRs), [filteredPRs])
   const reviewStats = useMemo(() => computeReviewStats(filteredReviews), [filteredReviews])
 
@@ -664,6 +700,12 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             orgOptions={prOrgOptions}
             selectedOrg={prOrgFilter}
             onSelectedOrgChange={setPrOrgFilter}
+            range={githubRange}
+            onRangeChange={setGithubRange}
+            startDate={githubStartDate}
+            onStartDateChange={setGithubStartDate}
+            endDate={githubEndDate}
+            onEndDateChange={setGithubEndDate}
           />
         )}
         {page === "prdetails" && (
@@ -673,6 +715,12 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             orgOptions={prOrgOptions}
             selectedOrg={prOrgFilter}
             onSelectedOrgChange={setPrOrgFilter}
+            range={githubRange}
+            onRangeChange={setGithubRange}
+            startDate={githubStartDate}
+            onStartDateChange={setGithubStartDate}
+            endDate={githubEndDate}
+            onEndDateChange={setGithubEndDate}
           />
         )}
       </main>
@@ -753,6 +801,47 @@ function PROrgFilter({
           ))}
         </SelectContent>
       </Select>
+    </div>
+  )
+}
+
+function GitHubTimeRangeFilter({
+  range,
+  onRangeChange,
+  startDate,
+  onStartDateChange,
+  endDate,
+  onEndDateChange,
+}: {
+  range: string
+  onRangeChange: (value: string) => void
+  startDate: string
+  onStartDateChange: (value: string) => void
+  endDate: string
+  onEndDateChange: (value: string) => void
+}) {
+  return (
+    <div className="mb-4 flex items-center gap-3 rounded-xl border border-border bg-card p-2.5 flex-wrap">
+      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground shrink-0">Date range</span>
+      <Select value={range} onValueChange={onRangeChange}>
+        <SelectTrigger className="h-8 w-40 text-xs shrink-0" aria-label="GitHub date range">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {RANGE_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {range === "custom" && (
+        <div className="flex items-center gap-2">
+          <input type="date" value={startDate} onChange={(event) => onStartDateChange(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs" aria-label="GitHub start date" />
+          <span className="text-xs text-muted-foreground">to</span>
+          <input type="date" value={endDate} onChange={(event) => onEndDateChange(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs" aria-label="GitHub end date" />
+        </div>
+      )}
     </div>
   )
 }
@@ -2090,6 +2179,12 @@ function PRPage({
   orgOptions,
   selectedOrg,
   onSelectedOrgChange,
+  range,
+  onRangeChange,
+  startDate,
+  onStartDateChange,
+  endDate,
+  onEndDateChange,
 }: {
   hasGitHubData: boolean
   prs: DashboardData["github_prs"]["prs"]
@@ -2098,6 +2193,12 @@ function PRPage({
   orgOptions: PROrgOption[]
   selectedOrg: string
   onSelectedOrgChange: (value: string) => void
+  range: string
+  onRangeChange: (value: string) => void
+  startDate: string
+  onStartDateChange: (value: string) => void
+  endDate: string
+  onEndDateChange: (value: string) => void
 }) {
   const [activeTab, setActiveTab] = useState<"creation" | "reviews">("creation")
 
@@ -2136,6 +2237,15 @@ function PRPage({
         <h2 className="text-xl font-bold">Pull Requests</h2>
         <p className="text-sm text-muted-foreground">GitHub PR statistics across all repositories</p>
       </div>
+
+      <GitHubTimeRangeFilter
+        range={range}
+        onRangeChange={onRangeChange}
+        startDate={startDate}
+        onStartDateChange={onStartDateChange}
+        endDate={endDate}
+        onEndDateChange={onEndDateChange}
+      />
 
       <div className="mb-6 grid gap-3 xl:grid-cols-[1fr_auto_1fr] xl:items-center">
         <div className="hidden xl:block" />
@@ -2305,12 +2415,24 @@ function PRDetailsPage({
   orgOptions,
   selectedOrg,
   onSelectedOrgChange,
+  range,
+  onRangeChange,
+  startDate,
+  onStartDateChange,
+  endDate,
+  onEndDateChange,
 }: {
   hasGitHubData: boolean
   stats: PRStats
   orgOptions: PROrgOption[]
   selectedOrg: string
   onSelectedOrgChange: (value: string) => void
+  range: string
+  onRangeChange: (value: string) => void
+  startDate: string
+  onStartDateChange: (value: string) => void
+  endDate: string
+  onEndDateChange: (value: string) => void
 }) {
   if (!hasGitHubData) {
     return (
@@ -2430,6 +2552,15 @@ function PRDetailsPage({
         <h2 className="text-xl font-bold">PR Details</h2>
         <p className="text-sm text-muted-foreground">Size percentiles and per-repository breakdown</p>
       </div>
+
+      <GitHubTimeRangeFilter
+        range={range}
+        onRangeChange={onRangeChange}
+        startDate={startDate}
+        onStartDateChange={onStartDateChange}
+        endDate={endDate}
+        onEndDateChange={onEndDateChange}
+      />
 
       <PROrgFilter orgOptions={orgOptions} selectedOrg={selectedOrg} onSelectedOrgChange={onSelectedOrgChange} />
 
