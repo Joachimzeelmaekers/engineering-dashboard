@@ -1,5 +1,7 @@
 # Engineering Dashboard
 
+Note: this project is fully vibed and code is not being read.
+
 Generate a local shadcn/Astro dashboard with AI tooling usage and GitHub contribution metrics.
 
 ![Overview](docs/screenshots/overview.png)
@@ -19,7 +21,7 @@ Generate a local shadcn/Astro dashboard with AI tooling usage and GitHub contrib
 - Provider usage (messages, sessions, token usage, estimated cost)
 - Timeline and model breakdowns
 - Session-level drilldowns
-- GitHub PR/review stats (optional, via `gh`)
+- GitHub PR/review stats (optional, via `gh`) with selectable date ranges
 
 Supported providers in this repo:
 
