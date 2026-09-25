@@ -1,14 +1,16 @@
 {
   "providers": {
     "claude-code": { "enabled": true },
-    "opencode": { "enabled": false },
+    "opencode": { "enabled": true },
     "cursor": { "enabled": false },
-    "codex": { "enabled": false },
+    "codex": { "enabled": true },
     "continue": { "enabled": false },
     "gemini": { "enabled": false },
     "trae": { "enabled": false },
     "windsurf": { "enabled": false },
-    "droid": { "enabled": true }
+    "omp": { "enabled": true },
+    "pi": { "enabled": true },
+    "droid": { "enabled": false }
   },
   "github": {
     "enabled": true,

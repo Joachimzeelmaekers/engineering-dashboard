@@ -8,9 +8,9 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 from .providers.base import ProviderResult, TranscriptTurn
-from .providers import opencode, claude, cursor, codex, continueai, gemini, trae, windsurf, droid
+from .providers import opencode, claude, cursor, codex, continueai, gemini, trae, windsurf, droid, omp, pi
 from .providers import github_prs
-from .pricing import estimate_cost
+from .pricing import estimate_cost, get_model_pricing
 from .config import is_provider_enabled, is_github_enabled
 from .paths import DATA_DIR as DATA_DIR_PATH, DASHBOARD_PUBLIC_DIR, OUTPUT_DIR
 
@@ -28,6 +28,8 @@ ALL_PROVIDERS = [
     ("gemini", gemini.load),
     ("trae", trae.load),
     ("windsurf", windsurf.load),
+    ("omp", omp.load),
+    ("pi", pi.load),
     ("droid", droid.load),
 ]
 PROVIDERS = [(name, fn) for name, fn in ALL_PROVIDERS if is_provider_enabled(name)]
@@ -120,11 +122,12 @@ def aggregate(results: list[ProviderResult]) -> dict:
             pt["input"] += msg.input_tokens
             pt["output"] += msg.output_tokens
 
-    # Compute estimated costs
+    # Compute estimated costs and expose the active catalog rates for the model table.
     for model_key, ms in model_stats.items():
         ms["cost_estimated"] = estimate_cost(
             model_key, ms["input"], ms["output"], ms["cache_read"], ms["cache_write"]
         )
+        ms["pricing"] = get_model_pricing(model_key)
 
     month_cost_estimated = 0.0
     for model_key, mm in month_stats.items():

@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { fmtCost, parseModelKey, PROVIDER_COLORS } from "@/lib/constants"
 import type { ModelRow } from "@/lib/data"
 import { VIRTUALIZED_TABLE_THRESHOLD } from "@/lib/dashboard-config"
@@ -124,13 +124,45 @@ export function ModelsPage({ rows }: { rows: ModelRow[] }) {
       cellClassName: "text-right font-mono text-primary",
       renderCell: (row) => fmtCost(row.cost_estimated),
     },
+    {
+      key: "input_price",
+      width: "minmax(105px, 0.7fr)",
+      header: <span className="text-right">Input $/1M</span>,
+      headerClassName: "text-right",
+      cellClassName: "text-right font-mono",
+      renderCell: (row) => row.input_price === null ? "—" : fmtCost(row.input_price),
+    },
+    {
+      key: "output_price",
+      width: "minmax(105px, 0.7fr)",
+      header: <span className="text-right">Output $/1M</span>,
+      headerClassName: "text-right",
+      cellClassName: "text-right font-mono",
+      renderCell: (row) => row.output_price === null ? "—" : fmtCost(row.output_price),
+    },
+    {
+      key: "cache_read_price",
+      width: "minmax(115px, 0.7fr)",
+      header: <span className="text-right">Cache Read $/1M</span>,
+      headerClassName: "text-right",
+      cellClassName: "text-right font-mono",
+      renderCell: (row) => row.cache_read_price === null ? "—" : fmtCost(row.cache_read_price),
+    },
+    {
+      key: "cache_write_price",
+      width: "minmax(115px, 0.7fr)",
+      header: <span className="text-right">Cache Write $/1M</span>,
+      headerClassName: "text-right",
+      cellClassName: "text-right font-mono",
+      renderCell: (row) => row.cache_write_price === null ? "—" : fmtCost(row.cache_write_price),
+    },
   ]
 
   return (
     <div>
       <div className="mb-6">
         <h2 className="text-xl font-bold">Models</h2>
-        <p className="text-sm text-muted-foreground">Token usage by model</p>
+        <p className="text-sm text-muted-foreground">Token usage and current catalog rates per 1M tokens (USD)</p>
       </div>
       <Card>
         <CardHeader><CardTitle>Token Usage by Model</CardTitle></CardHeader>
@@ -156,6 +188,10 @@ export function ModelsPage({ rows }: { rows: ModelRow[] }) {
                   <SortableHeader label="Cache Read" sortKey="cache_read" sortConfig={sortConfig} onSort={requestSort} className="text-right" align="right" />
                   <SortableHeader label="Total" sortKey="total" sortConfig={sortConfig} onSort={requestSort} className="text-right" align="right" />
                   <SortableHeader label="Est. Cost" sortKey="cost_estimated" sortConfig={sortConfig} onSort={requestSort} className="text-right" align="right" />
+                  <TableHead className="text-right">Input $/1M</TableHead>
+                  <TableHead className="text-right">Output $/1M</TableHead>
+                  <TableHead className="text-right">Cache Read $/1M</TableHead>
+                  <TableHead className="text-right">Cache Write $/1M</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -184,6 +220,10 @@ export function ModelsPage({ rows }: { rows: ModelRow[] }) {
                       <TableCell className="text-right font-mono"><TableNumber value={modelRow.cache_read} /></TableCell>
                       <TableCell className="text-right font-mono"><TableNumber value={modelRow.input + modelRow.output} /></TableCell>
                       <TableCell className="text-right font-mono text-primary">{fmtCost(modelRow.cost_estimated)}</TableCell>
+                      <TableCell className="text-right font-mono">{modelRow.input_price === null ? "—" : fmtCost(modelRow.input_price)}</TableCell>
+                      <TableCell className="text-right font-mono">{modelRow.output_price === null ? "—" : fmtCost(modelRow.output_price)}</TableCell>
+                      <TableCell className="text-right font-mono">{modelRow.cache_read_price === null ? "—" : fmtCost(modelRow.cache_read_price)}</TableCell>
+                      <TableCell className="text-right font-mono">{modelRow.cache_write_price === null ? "—" : fmtCost(modelRow.cache_write_price)}</TableCell>
                     </TableRow>
                   )
                 })}

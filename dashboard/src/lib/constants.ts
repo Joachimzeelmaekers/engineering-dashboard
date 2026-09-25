@@ -8,6 +8,8 @@ export const PROVIDER_COLORS: Record<string, string> = {
   trae: "#a07a65",
   windsurf: "#7f8c5a",
   droid: "#c9a84c",
+  omp: "#8b6f9b",
+  pi: "#5f7c8a",
 }
 
 export const CHART_COLORS = [
