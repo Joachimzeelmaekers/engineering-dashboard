@@ -48,3 +48,10 @@ export function fmtDateTime(ms: number): string {
     minute: "2-digit",
   })
 }
+
+const compactAxisFormatter = new Intl.NumberFormat("en", {
+  notation: "compact",
+  maximumFractionDigits: 2,
+})
+
+export const fmtAxis = (value: number) => compactAxisFormatter.format(value)

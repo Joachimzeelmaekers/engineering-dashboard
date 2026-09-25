@@ -258,11 +258,16 @@ export interface TimelineBucket {
   [model: string]: number | string
 }
 
+export interface TimelineData {
+  data: TimelineBucket[]
+  models: { key: string; color: string }[]
+}
+
 export function getTimelineData(
   filtered: NormalizedMessage[],
   groupBy: string,
   tokenType: string
-): { data: TimelineBucket[]; models: { key: string; color: string }[] } {
+): TimelineData {
   const buckets: Record<string, Record<string, { input: number; output: number; reasoning: number }>> = {}
 
   for (const msg of filtered) {
