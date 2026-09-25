@@ -267,6 +267,19 @@ def _resolve_price(model: str) -> tuple[float, float, float, float]:
     return dynamic.get(mapped, (0.0, 0.0, 0.0, 0.0))
 
 
+def get_model_pricing(model: str) -> dict[str, float] | None:
+    """Return current per-million-token USD rates, or None when the model is unknown."""
+    rates = _resolve_price(model)
+    if not any(rates):
+        return None
+    return {
+        "input": rates[0],
+        "output": rates[1],
+        "cache_read": rates[2],
+        "cache_write": rates[3],
+    }
+
+
 def estimate_cost(model: str, input_tokens: int, output_tokens: int,
                   cache_read_tokens: int, cache_write_tokens: int = 0) -> float:
     price = _resolve_price(model)

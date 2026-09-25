@@ -1840,6 +1840,38 @@ function ModelsPage({ rows }: { rows: ReturnType<typeof getModelRows> }) {
       renderCell: (row) => <TableNumber value={row.cache_read} />,
     },
     {
+      key: "input_price",
+      width: "minmax(105px, 0.7fr)",
+      header: <span className="text-right">Input $/1M</span>,
+      headerClassName: "text-right",
+      cellClassName: "text-right font-mono",
+      renderCell: (row) => row.input_price === null ? "—" : fmtCost(row.input_price),
+    },
+    {
+      key: "output_price",
+      width: "minmax(105px, 0.7fr)",
+      header: <span className="text-right">Output $/1M</span>,
+      headerClassName: "text-right",
+      cellClassName: "text-right font-mono",
+      renderCell: (row) => row.output_price === null ? "—" : fmtCost(row.output_price),
+    },
+    {
+      key: "cache_read_price",
+      width: "minmax(115px, 0.7fr)",
+      header: <span className="text-right">Cache Read $/1M</span>,
+      headerClassName: "text-right",
+      cellClassName: "text-right font-mono",
+      renderCell: (row) => row.cache_read_price === null ? "—" : fmtCost(row.cache_read_price),
+    },
+    {
+      key: "cache_write_price",
+      width: "minmax(115px, 0.7fr)",
+      header: <span className="text-right">Cache Write $/1M</span>,
+      headerClassName: "text-right",
+      cellClassName: "text-right font-mono",
+      renderCell: (row) => row.cache_write_price === null ? "—" : fmtCost(row.cache_write_price),
+    },
+    {
       key: "total",
       width: "minmax(100px, 0.7fr)",
       header: <SortButton label="Total" sortKey="total" sortConfig={sortConfig} onSort={requestSort} align="right" />,
@@ -1859,10 +1891,8 @@ function ModelsPage({ rows }: { rows: ReturnType<typeof getModelRows> }) {
 
   return (
     <div>
-      <div className="mb-6">
         <h2 className="text-xl font-bold">Models</h2>
-        <p className="text-sm text-muted-foreground">Token usage by model</p>
-      </div>
+        <p className="text-sm text-muted-foreground">Token usage and current catalog rates per 1M tokens (USD)</p>
       <Card>
         <CardHeader><CardTitle>Token Usage by Model</CardTitle></CardHeader>
         <CardContent className="overflow-x-auto">
@@ -1885,6 +1915,10 @@ function ModelsPage({ rows }: { rows: ReturnType<typeof getModelRows> }) {
                   <SortableHeader label="Output" sortKey="output" sortConfig={sortConfig} onSort={requestSort} className="text-right" align="right" />
                   <SortableHeader label="Reasoning" sortKey="reasoning" sortConfig={sortConfig} onSort={requestSort} className="text-right" align="right" />
                   <SortableHeader label="Cache Read" sortKey="cache_read" sortConfig={sortConfig} onSort={requestSort} className="text-right" align="right" />
+                  <TableHead className="text-right">Input $/1M</TableHead>
+                  <TableHead className="text-right">Output $/1M</TableHead>
+                  <TableHead className="text-right">Cache Read $/1M</TableHead>
+                  <TableHead className="text-right">Cache Write $/1M</TableHead>
                   <SortableHeader label="Total" sortKey="total" sortConfig={sortConfig} onSort={requestSort} className="text-right" align="right" />
                   <SortableHeader label="Est. Cost" sortKey="cost_estimated" sortConfig={sortConfig} onSort={requestSort} className="text-right" align="right" />
                 </TableRow>
@@ -1913,6 +1947,10 @@ function ModelsPage({ rows }: { rows: ReturnType<typeof getModelRows> }) {
                       <TableCell className="text-right font-mono"><TableNumber value={m.output} /></TableCell>
                       <TableCell className="text-right font-mono"><TableNumber value={m.reasoning} /></TableCell>
                       <TableCell className="text-right font-mono"><TableNumber value={m.cache_read} /></TableCell>
+                      <TableCell className="text-right font-mono">{m.input_price === null ? "—" : fmtCost(m.input_price)}</TableCell>
+                      <TableCell className="text-right font-mono">{m.output_price === null ? "—" : fmtCost(m.output_price)}</TableCell>
+                      <TableCell className="text-right font-mono">{m.cache_read_price === null ? "—" : fmtCost(m.cache_read_price)}</TableCell>
+                      <TableCell className="text-right font-mono">{m.cache_write_price === null ? "—" : fmtCost(m.cache_write_price)}</TableCell>
                       <TableCell className="text-right font-mono"><TableNumber value={m.input + m.output} /></TableCell>
                       <TableCell className="text-right font-mono text-primary">{fmtCost(m.cost_estimated)}</TableCell>
                     </TableRow>

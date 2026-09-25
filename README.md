@@ -31,6 +31,13 @@ Supported providers in this repo:
 - `gemini`
 - `trae`
 - `windsurf`
+- `droid`
+- `omp` (Oh My Pi)
+- `pi` (Pi coding agent)
+
+For OMP and Pi, session history is read from `~/.omp/agent/sessions` and `~/.pi/agent/sessions`. Use `OMP_CODING_AGENT_DIR` / `PI_CODING_AGENT_DIR` to override the agent data directory, or `OMP_CODING_AGENT_SESSION_DIR` / `PI_CODING_AGENT_SESSION_DIR` to point directly to the sessions directory.
+
+The Models page shows active input/output/cache-read/cache-write catalog rates per million tokens (USD). Rates use the same explicit and dynamic catalogs as estimated costs; dynamic catalog data is cached for 24 hours and re-fetched during report generation when expired. Unknown model prices appear as `—`.
 
 ## Quick start
 

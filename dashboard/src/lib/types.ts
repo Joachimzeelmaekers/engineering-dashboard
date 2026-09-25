@@ -22,6 +22,7 @@ export interface ModelStats {
   cost_logged: number
   cost_estimated: number
   provider: string
+  pricing: { input: number; output: number; cache_read: number; cache_write: number } | null
 }
 
 export interface ProviderTotal {

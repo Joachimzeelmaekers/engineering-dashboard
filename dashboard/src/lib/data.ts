@@ -65,6 +65,10 @@ export interface ModelRow {
   output: number
   reasoning: number
   cache_read: number
+  input_price: number | null
+  output_price: number | null
+  cache_read_price: number | null
+  cache_write_price: number | null
   cost_estimated: number
 }
 
@@ -98,6 +102,10 @@ export function getModelRows(
         output: 0,
         reasoning: 0,
         cache_read: 0,
+        input_price: modelStats[m.modelKey]?.pricing?.input ?? null,
+        output_price: modelStats[m.modelKey]?.pricing?.output ?? null,
+        cache_read_price: modelStats[m.modelKey]?.pricing?.cache_read ?? null,
+        cache_write_price: modelStats[m.modelKey]?.pricing?.cache_write ?? null,
         cost_estimated: 0,
       }
     }
