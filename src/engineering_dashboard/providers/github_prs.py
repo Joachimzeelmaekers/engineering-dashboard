@@ -1,8 +1,9 @@
 """GitHub Pull Request statistics provider.
 
-Fetches all PRs authored by the authenticated user via the GitHub GraphQL API.
-Uses incremental caching: fetches all PRs once, then only fetches new PRs since
-the most recent cached PR on subsequent runs.
+Fetches all accessible PRs authored by the authenticated user via GraphQL.
+Refreshes the complete authored-PR connection on each run. Caches are only
+replaced after a complete fetch; failed refreshes retain the previous data.
+Previously cached PRs no longer accessible are retained with a warning.
 """
 
 import json
@@ -42,6 +43,8 @@ class Review:
     additions: int
     deletions: int
     changed_files: int
+    review_id: str = ""
+    pr_created_at: str = ""
 
 
 @dataclass
@@ -57,15 +60,23 @@ REVIEW_CACHE_FILE = os.path.join(DATA_DIR, "cache_github_reviews.json")
 
 
 def _run_gh(query: str) -> dict:
-    """Run a GraphQL query via gh CLI."""
-    result = subprocess.run(
-        ["gh", "api", "graphql", "-f", f"query={query}"],
-        capture_output=True, text=True, timeout=30,
-    )
-    if result.returncode != 0:
-        print(f"  [github] gh api error: {result.stderr.strip()}", file=sys.stderr)
+    """Run a GraphQL query via gh CLI, rejecting partial/error responses."""
+    try:
+        result = subprocess.run(
+            ["gh", "api", "graphql", "-f", f"query={query}"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            print(f"  [github] gh api error: {result.stderr.strip()}", file=sys.stderr)
+            return {}
+        data = json.loads(result.stdout)
+        if not isinstance(data, dict) or data.get("errors"):
+            print(f"  [github] GraphQL error: {data}", file=sys.stderr)
+            return {}
+        return data
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+        print(f"  [github] gh api error: {exc}", file=sys.stderr)
         return {}
-    return json.loads(result.stdout)
 
 
 def _parse_nodes(nodes: list) -> list[PullRequest]:
@@ -100,67 +111,24 @@ def _dedupe_prs(prs: list[PullRequest]) -> list[PullRequest]:
     return unique
 
 
-def _fetch_prs_for_day(day: str) -> list[PullRequest]:
-    """Fetch PRs authored by current user for a single UTC day (YYYY-MM-DD)."""
-    username = _get_username()
-    if not username:
-        return []
+class GitHubPRFetchError(RuntimeError):
+    """The authored-PR connection could not be fetched completely."""
 
+
+def _fetch_prs() -> list[PullRequest]:
+    """Fetch every accessible authored PR, without creation-date cutoffs."""
     prs = []
     cursor = None
-    query_range = f"{day}..{day}"
-
-    while True:
-        after = f', after: "{cursor}"' if cursor else ""
-        query = f"""{{
-  search(query: "is:pr author:{username} created:{query_range}", type: ISSUE, first: 100{after}) {{
-    pageInfo {{ hasNextPage endCursor }}
-    nodes {{
-      ... on PullRequest {{
-        title
-        url
-        createdAt
-        mergedAt
-        closedAt
-        state
-        repository {{ nameWithOwner owner {{ login }} }}
-        additions
-        deletions
-        changedFiles
-      }}
-    }}
-  }}
-}}"""
-        data = _run_gh(query)
-        nodes = (data.get("data") or {}).get("search", {}).get("nodes", [])
-        page_info = (data.get("data") or {}).get("search", {}).get("pageInfo", {})
-
-        if not nodes:
-            break
-
-        prs.extend(_parse_nodes([n for n in nodes if n]))
-
-        if not page_info.get("hasNextPage"):
-            break
-        cursor = page_info.get("endCursor")
-
-    return prs
-
-
-def _fetch_prs_since(since: str | None = None) -> list[PullRequest]:
-    """Fetch PRs, optionally only those created after `since` (ISO date).
-
-    Ordered DESC by creation date, stops paginating once we hit a PR older than `since`.
-    """
-    prs = []
-    cursor = None
+    seen_cursors = set()
+    expected_count = None
     page = 0
 
     while True:
-        after = f', after: "{cursor}"' if cursor else ""
+        after = f", after: {json.dumps(cursor)}" if cursor else ""
         query = f"""{{
   viewer {{
     pullRequests(first: 100, states: [OPEN, CLOSED, MERGED], orderBy: {{field: CREATED_AT, direction: DESC}}{after}) {{
+      totalCount
       pageInfo {{ hasNextPage endCursor }}
       nodes {{
         title
@@ -178,33 +146,43 @@ def _fetch_prs_since(since: str | None = None) -> list[PullRequest]:
   }}
 }}"""
         data = _run_gh(query)
-        nodes = (data.get("data") or {}).get("viewer", {}).get("pullRequests", {}).get("nodes", [])
-        page_info = (data.get("data") or {}).get("viewer", {}).get("pullRequests", {}).get("pageInfo", {})
+        connection = ((data.get("data") or {}).get("viewer") or {}).get("pullRequests")
+        if data.get("errors") or not isinstance(connection, dict):
+            raise GitHubPRFetchError("missing or failed authored-PR connection")
+        nodes = connection.get("nodes")
+        page_info = connection.get("pageInfo")
+        count = connection.get("totalCount")
+        if (
+            not isinstance(nodes, list)
+            or any(not isinstance(node, dict) or not node.get("url") for node in nodes)
+            or not isinstance(page_info, dict)
+            or not isinstance(page_info.get("hasNextPage"), bool)
+            or not isinstance(count, int)
+            or count < 0
+        ):
+            raise GitHubPRFetchError("incomplete authored-PR page")
+        if expected_count is None:
+            expected_count = count
+        elif count != expected_count:
+            raise GitHubPRFetchError("authored-PR count changed during pagination")
 
-        if not nodes:
-            break
-
-        batch = _parse_nodes(nodes)
-
-        if since:
-            # Stop when we hit PRs older than our cutoff
-            for pr in batch:
-                if pr.created_at > since:
-                    prs.append(pr)
-                else:
-                    # We've reached cached territory, stop
-                    return prs
-        else:
-            prs.extend(batch)
-
+        prs.extend(_parse_nodes(nodes))
         page += 1
         if page % 5 == 0:
             print(f"  [github] fetched {len(prs)} PRs ({page} pages)...")
 
-        if not page_info.get("hasNextPage"):
+        if not page_info["hasNextPage"]:
             break
         cursor = page_info.get("endCursor")
+        if not nodes or not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
+            raise GitHubPRFetchError("authored-PR pagination did not advance")
+        seen_cursors.add(cursor)
 
+    prs = _dedupe_prs(prs)
+    if len(prs) != expected_count:
+        raise GitHubPRFetchError(
+            f"incomplete authored-PR fetch: received {len(prs)} of {expected_count}"
+        )
     return prs
 
 
@@ -230,29 +208,21 @@ def _dict_to_pr(d: dict) -> PullRequest:
 
 def _save_cache(prs: list[PullRequest]):
     os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-    # Find the newest PR date for watermark
-    newest = ""
-    for pr in prs:
-        if pr.created_at > newest:
-            newest = pr.created_at
     with open(CACHE_FILE, "w") as f:
         json.dump({
             "cached_at": datetime.now(timezone.utc).isoformat(),
-            "newest_created_at": newest,
             "prs": [_pr_to_dict(pr) for pr in prs],
         }, f)
 
 
-def _load_cache() -> tuple[list[PullRequest], str] | None:
-    """Load cache. Returns (prs, newest_created_at) or None if no cache."""
+def _load_cache() -> list[PullRequest] | None:
+    """Load cached records for fallback, never as proof of completeness."""
     if not os.path.exists(CACHE_FILE):
         return None
     try:
         with open(CACHE_FILE) as f:
             data = json.load(f)
-        prs = [_dict_to_pr(d) for d in data["prs"]]
-        newest = data.get("newest_created_at", "")
-        return prs, newest
+        return _dedupe_prs([_dict_to_pr(d) for d in data["prs"]])
     except Exception:
         return None
 
@@ -268,6 +238,8 @@ def _review_to_dict(r: Review) -> dict:
         "additions": r.additions,
         "deletions": r.deletions,
         "changed_files": r.changed_files,
+        "review_id": r.review_id,
+        "pr_created_at": r.pr_created_at,
     }
 
 
@@ -283,76 +255,165 @@ def _get_username() -> str:
     return result.stdout.strip()
 
 
-def _get_window_expected_count(username: str, date_range: str) -> int:
-    """Quick check: how many PRs does the API say exist for this window?"""
-    query = f"""{{ search(query: "is:pr reviewed-by:{username} created:{date_range}", type: ISSUE, first: 1) {{ issueCount }} }}"""
-    data = _run_gh(query)
-    return (data.get("data") or {}).get("search", {}).get("issueCount", 0)
+def _review_query(query: str) -> dict | None:
+    """Reject partial GraphQL responses instead of certifying a truncated refresh."""
+    try:
+        response = _run_gh(query)
+    except (subprocess.SubprocessError, OSError, ValueError) as exc:
+        print(f"  [github] review query failed: {exc}", file=sys.stderr)
+        return None
+    if not response or response.get("errors") or not response.get("data"):
+        print("  [github] review query failed or returned partial data", file=sys.stderr)
+        return None
+    return response["data"]
 
 
-def _fetch_reviews_window(username: str, date_range: str) -> tuple[list[Review], bool]:
-    """Fetch all reviews for a single date range window.
-    Returns (reviews, success). success=False if an API error occurred."""
+def _fetch_pr_reviews(username: str, pr: dict) -> tuple[list[Review], bool]:
+    """Follow the review connection independently for each matching PR."""
+    reviews = []
+    connection = pr.get("reviews")
+    seen_cursors = set()
+    while True:
+        if not isinstance(connection, dict):
+            return reviews, False
+        nodes = connection.get("nodes")
+        page = connection.get("pageInfo")
+        if not isinstance(nodes, list) or not isinstance(page, dict) or "hasNextPage" not in page:
+            return reviews, False
+        for node in nodes:
+            if not node or not node.get("id"):
+                return reviews, False
+            # Drafts have no submittedAt and must not count as completed reviews.
+            if node.get("state") == "PENDING" or not node.get("submittedAt"):
+                continue
+            repo = pr.get("repository") or {}
+            reviews.append(Review(
+                pr_title=pr.get("title", ""),
+                pr_url=pr.get("url", ""),
+                repo=repo.get("nameWithOwner", ""),
+                org=(repo.get("owner") or {}).get("login", ""),
+                review_created_at=node["submittedAt"],
+                state=node.get("state", ""),
+                additions=pr.get("additions", 0),
+                deletions=pr.get("deletions", 0),
+                changed_files=pr.get("changedFiles", 0),
+                review_id=node["id"],
+                pr_created_at=pr.get("createdAt", ""),
+            ))
+        if not page["hasNextPage"]:
+            return reviews, True
+        cursor = page.get("endCursor")
+        if not nodes or not cursor or cursor in seen_cursors or not pr.get("id"):
+            return reviews, False
+        seen_cursors.add(cursor)
+        data = _review_query(f"""{{
+  node(id: {json.dumps(pr["id"])}) {{
+    ... on PullRequest {{
+      reviews(author: {json.dumps(username)}, first: 100, after: {json.dumps(cursor)}) {{
+        nodes {{ id submittedAt state }}
+        pageInfo {{ hasNextPage endCursor }}
+      }}
+    }}
+  }}
+}}""")
+        if data is None:
+            return reviews, False
+        connection = (data.get("node") or {}).get("reviews")
+
+
+def _split_review_window(date_range: str) -> tuple[str, str] | None:
+    """Split inclusive creation windows down to GitHub's second precision."""
+    start_text, end_text = date_range.split("..")
+    start = datetime.fromisoformat(start_text.replace("Z", "+00:00"))
+    end = datetime.fromisoformat(end_text.replace("Z", "+00:00"))
+    if len(start_text) == 10:
+        start = start.replace(tzinfo=timezone.utc)
+    if len(end_text) == 10:
+        end = end.replace(tzinfo=timezone.utc) + timedelta(days=1, seconds=-1)
+    seconds = int((end - start).total_seconds())
+    if seconds <= 0:
+        return None
+    middle = start + timedelta(seconds=seconds // 2)
+    left_start = start.strftime("%Y-%m-%dT%H:%M:%SZ")
+    left_end = middle.strftime("%Y-%m-%dT%H:%M:%SZ")
+    right_start = (middle + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    right_end = end.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return f"{left_start}..{left_end}", f"{right_start}..{right_end}"
+
+
+def _fetch_reviews_window(
+    username: str, date_range: str, fetched_pr_urls: set[str] | None = None,
+) -> tuple[list[Review], bool]:
+    """Fetch all matching PRs and submitted reviews, detecting search truncation."""
     reviews = []
     cursor = None
-
+    seen_cursors = set()
+    seen_pr_urls = set()
+    expected = None
+    fetched_prs = 0
     while True:
-        after = f', after: "{cursor}"' if cursor else ""
-        query = f"""{{
-  search(query: "is:pr reviewed-by:{username} created:{date_range}", type: ISSUE, first: 100{after}) {{
+        after = f", after: {json.dumps(cursor)}" if cursor else ""
+        search = json.dumps(f"is:pr reviewed-by:{username} created:{date_range}")
+        data = _review_query(f"""{{
+  search(query: {search}, type: ISSUE, first: 100{after}) {{
+    issueCount
     pageInfo {{ hasNextPage endCursor }}
     nodes {{
       ... on PullRequest {{
-        title
-        url
-        createdAt
+        id title url createdAt
         repository {{ nameWithOwner owner {{ login }} }}
-        additions
-        deletions
-        changedFiles
-        reviews(author: "{username}", first: 10) {{
-          nodes {{
-            createdAt
-            state
-          }}
+        additions deletions changedFiles
+        reviews(author: {json.dumps(username)}, first: 100) {{
+          nodes {{ id submittedAt state }}
+          pageInfo {{ hasNextPage endCursor }}
         }}
       }}
     }}
   }}
-}}"""
-        data = _run_gh(query)
-        if not data:
+}}""")
+        if data is None:
             return reviews, False
-
-        nodes = (data.get("data") or {}).get("search", {}).get("nodes", [])
-        page_info = (data.get("data") or {}).get("search", {}).get("pageInfo", {})
-
-        if not nodes:
-            break
-
-        for n in nodes:
-            if not n:
+        result = data.get("search") or {}
+        count = result.get("issueCount")
+        nodes = result.get("nodes")
+        page = result.get("pageInfo")
+        if not isinstance(count, int) or not isinstance(nodes, list) or not isinstance(page, dict) or "hasNextPage" not in page:
+            return reviews, False
+        if expected is None:
+            expected = count
+            if expected > 1000:
+                split = _split_review_window(date_range)
+                if split is None:
+                    print(f"  [github] incomplete reviews: {date_range} has {expected} PRs, exceeding the 1000-result search limit at one-second precision", file=sys.stderr)
+                    return [], False
+                left, left_ok = _fetch_reviews_window(username, split[0], fetched_pr_urls)
+                right, right_ok = _fetch_reviews_window(username, split[1], fetched_pr_urls)
+                return left + right, left_ok and right_ok
+        elif count != expected:
+            print(f"  [github] incomplete reviews: {date_range} matching PR count changed during pagination", file=sys.stderr)
+            return reviews, False
+        for pr in nodes:
+            if not pr or not pr.get("url"):
+                return reviews, False
+            if pr["url"] in seen_pr_urls:
                 continue
-            repo = (n.get("repository") or {})
-            review_nodes = (n.get("reviews") or {}).get("nodes", [])
-            for rv in review_nodes:
-                reviews.append(Review(
-                    pr_title=n.get("title", ""),
-                    pr_url=n.get("url", ""),
-                    repo=repo.get("nameWithOwner", ""),
-                    org=repo.get("owner", {}).get("login", ""),
-                    review_created_at=rv.get("createdAt", ""),
-                    state=rv.get("state", ""),
-                    additions=n.get("additions", 0),
-                    deletions=n.get("deletions", 0),
-                    changed_files=n.get("changedFiles", 0),
-                ))
-
-        if not page_info.get("hasNextPage"):
-            break
-        cursor = page_info.get("endCursor")
-
-    return reviews, True
+            pr_reviews, success = _fetch_pr_reviews(username, pr)
+            if not success:
+                return reviews, False
+            seen_pr_urls.add(pr["url"])
+            fetched_prs += 1
+            if fetched_pr_urls is not None:
+                fetched_pr_urls.add(pr["url"])
+            reviews.extend(pr_reviews)
+        if not page["hasNextPage"]:
+            if fetched_prs != expected:
+                print(f"  [github] incomplete reviews: {date_range} returned {fetched_prs} of {expected} matching PRs", file=sys.stderr)
+                return reviews, False
+            return reviews, True
+        cursor = page.get("endCursor")
+        if not nodes or not cursor or cursor in seen_cursors or fetched_prs >= 1000:
+            return reviews, False
+        seen_cursors.add(cursor)
 
 
 def _generate_half_year_windows(start_year: int, end_date: datetime) -> list[str]:
@@ -365,57 +426,40 @@ def _generate_half_year_windows(start_year: int, end_date: datetime) -> list[str
     return windows
 
 
-def _is_window_current(window: str) -> bool:
-    """Check if a window contains today's date (still accumulating data)."""
-    start, end = window.split("..")
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return start <= today <= end
-
-
-def _today_window() -> str:
-    """Single-day window for today (UTC)."""
-    d = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return f"{d}..{d}"
-
-
-def _fetch_reviews_windowed(windows_to_fetch: list[str], cached_windows: dict) -> tuple[dict, list[Review]]:
-    """Fetch reviews for specific windows. Returns updated window map and all new reviews."""
-    username = _get_username()
-    now = datetime.now(timezone.utc)
-    new_reviews = []
-
+def _fetch_reviews_windowed(windows_to_fetch: list[str]) -> tuple[dict, list[Review], bool, set[str]]:
+    """Refresh all requested creation windows; record only completed windows."""
+    try:
+        username = _get_username()
+    except (subprocess.SubprocessError, OSError) as exc:
+        print(f"  [github] cannot identify review author: {exc}", file=sys.stderr)
+        return {}, [], False, set()
+    if not username:
+        print("  [github] cannot identify review author", file=sys.stderr)
+        return {}, [], False, set()
+    windows = {}
+    reviews = []
+    complete = True
+    fetched_pr_urls = set()
     for window in windows_to_fetch:
-        window_start = window.split("..")[0]
-        if window_start > now.strftime("%Y-%m-%d"):
-            continue
-
-        reviews, success = _fetch_reviews_window(username, window)
+        fetched, success = _fetch_reviews_window(username, window, fetched_pr_urls)
+        reviews.extend(fetched)
         if not success:
-            print(f"  [github] {window}: API error, skipping (will retry next run)")
+            print(f"  [github] {window}: incomplete review fetch; will retry next run", file=sys.stderr)
+            complete = False
             continue
-
-        if reviews:
-            print(f"  [github] {window}: {len(reviews)} reviews")
-            new_reviews.extend(reviews)
-            cached_windows[window] = len(reviews)
-        else:
-            # Got 0 — check if there should actually be data
-            expected = _get_window_expected_count(username, window)
-            if expected > 0:
-                print(f"  [github] {window}: got 0 but API says {expected} PRs exist, marking for retry")
-                # Don't mark as cached so it retries next run
-            else:
-                cached_windows[window] = 0
-
-    return cached_windows, new_reviews
+        windows[window] = len(fetched)
+        print(f"  [github] {window}: {len(fetched)} reviews")
+    return windows, reviews, complete, fetched_pr_urls
 
 
-def _save_review_cache(reviews: list[Review], windows: dict):
+def _save_review_cache(reviews: list[Review], windows: dict, unrefreshed_pr_urls: set[str]):
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(REVIEW_CACHE_FILE, "w") as f:
         json.dump({
             "cached_at": datetime.now(timezone.utc).isoformat(),
             "windows": windows,  # {"2024-01-01..2024-06-30": 434, ...}
+            "accessible_complete": True,
+            "unrefreshed_pr_urls": sorted(unrefreshed_pr_urls),
             "reviews": [_review_to_dict(r) for r in reviews],
         }, f)
 
@@ -437,125 +481,77 @@ def _load_review_cache() -> tuple[list[Review], dict] | None:
 def _dedupe_reviews(reviews: list[Review]) -> list[Review]:
     seen = set()
     unique = []
-    for r in reviews:
-        key = (r.pr_url, r.review_created_at)
-        if key not in seen:
-            seen.add(key)
-            unique.append(r)
+    for review in reviews:
+        # Legacy caches have no IDs: preserve their rows until a complete refresh
+        # replaces them, rather than guessing identity from a shared timestamp.
+        if review.state == "PENDING":
+            continue
+        if review.review_id:
+            if review.review_id in seen:
+                continue
+            seen.add(review.review_id)
+        unique.append(review)
     return unique
 
 
 def _load_reviews() -> list[Review]:
     now = datetime.now(timezone.utc)
     all_windows = _generate_half_year_windows(github_history_start_year(), now)
-    # Filter to non-future windows
     all_windows = [w for w in all_windows if w.split("..")[0] <= now.strftime("%Y-%m-%d")]
-
     cached = _load_review_cache()
-
-    if cached is not None:
-        cached_reviews, cached_windows = cached
-        print(f"  [github] review cache has {len(cached_reviews)} reviews across {len(cached_windows)} windows")
-
-        # Find windows that need fetching:
-        # 1. Half-year windows not in cache at all (new or previously failed)
-        # 2. Always fetch TODAY only (full-day TTL behavior)
-        windows_to_fetch = []
-        for w in all_windows:
-            if w not in cached_windows:
-                windows_to_fetch.append(w)
-
-        today = _today_window()
-        windows_to_fetch.append(today)
-
-        if not windows_to_fetch:
-            print(f"  [github] all windows cached, no fetch needed")
-            return cached_reviews
-
-        print(f"  [github] fetching {len(windows_to_fetch)} windows: {', '.join(windows_to_fetch)}")
-        cached_windows, new_reviews = _fetch_reviews_windowed(windows_to_fetch, cached_windows)
-
-        # Merge: keep cached reviews from windows we didn't re-fetch, add new ones
-        refetched_windows = set(windows_to_fetch)
-        kept = [r for r in cached_reviews if not _review_in_windows(r, refetched_windows)]
-        all_reviews = _dedupe_reviews(kept + new_reviews)
-
-        print(f"  [github] total: {len(all_reviews)} reviews")
-        _save_review_cache(all_reviews, cached_windows)
-        return all_reviews
-
-    # First run
-    print("  [github] no review cache found, fetching all reviews (half-year windows)...")
-    cached_windows, all_reviews = _fetch_reviews_windowed(all_windows, {})
-    all_reviews = _dedupe_reviews(all_reviews)
-    print(f"  [github] fetched {len(all_reviews)} total unique reviews")
-    _save_review_cache(all_reviews, cached_windows)
-    return all_reviews
-
-
-def _review_in_windows(review: Review, windows: set[str]) -> bool:
-    """Check if a review's PR creation date falls within any of the given windows."""
-    # We don't have PR created_at on the review, but we can check by review date
-    for w in windows:
-        start, end = w.split("..")
-        # Reviews are tied to PR created date in the search, so approximate
-        # by checking the review date against the window
-        rd = review.review_created_at[:10] if review.review_created_at else ""
-        if start <= rd <= end:
-            return True
-    return False
+    print(f"  [github] refreshing reviews across {len(all_windows)} PR-creation windows")
+    windows, fetched, complete, fetched_pr_urls = _fetch_reviews_windowed(all_windows)
+    if not complete:
+        if cached is not None:
+            print("  [github] WARNING: review refresh incomplete; preserving cache. Reported review totals are stale and may be incomplete.", file=sys.stderr)
+            return _dedupe_reviews(cached[0])
+        print("  [github] WARNING: review refresh incomplete; reported totals are partial and no complete cache was saved.", file=sys.stderr)
+        return _dedupe_reviews(fetched)
+    # Missing search results can mean lost access. Replace only PRs actually
+    # fetched, including those whose submitted-review connection is now empty.
+    retained = [r for r in (cached[0] if cached else []) if r.pr_url not in fetched_pr_urls and r.state != "PENDING"]
+    unrefreshed = {r.pr_url for r in retained}
+    if unrefreshed:
+        print(f"  [github] WARNING: retaining cached reviews on {len(unrefreshed)} PRs absent from the current API search; this history cannot be refreshed and may be incomplete.", file=sys.stderr)
+    reviews = _dedupe_reviews(fetched + retained)
+    _save_review_cache(reviews, windows, unrefreshed)
+    print(f"  [github] {len(reviews)} submitted reviews ({len(fetched)} fetched, {len(retained)} cached historical rows retained)")
+    return reviews
 
 
 def load() -> GitHubPRResult:
-    """Load GitHub PR data with incremental caching."""
+    """Refresh all authored PRs, retaining cached data if the refresh fails."""
     cached = _load_cache()
+    print("  [github] refreshing all authored PRs...")
+    source = "github-graphql"
+    try:
+        prs = _fetch_prs()
+    except GitHubPRFetchError as exc:
+        if cached is None:
+            raise
+        print(
+            f"  [github] PR refresh incomplete ({exc}); using {len(cached)} "
+            "cached PRs without updating the cache",
+            file=sys.stderr,
+        )
+        prs = cached
+        source = "cache-fallback"
+    else:
+        print(f"  [github] fetched {len(prs)} total unique PRs")
+        fresh_urls = {pr.url for pr in prs}
+        inaccessible = [pr for pr in (cached or []) if pr.url not in fresh_urls]
+        if inaccessible:
+            print(
+                f"  [github] retaining {len(inaccessible)} cached PRs absent from "
+                "the accessible API results; their states and sizes could not be refreshed",
+                file=sys.stderr,
+            )
+            prs.extend(inaccessible)
+            source = "github-graphql-with-cached-history"
+        _save_cache(prs)
 
-    if cached is not None:
-        cached_prs, newest = cached
-        print(f"  [github] cache has {len(cached_prs)} PRs (newest: {newest[:10] if newest else 'n/a'})")
-
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        newest_day = newest[:10] if newest else ""
-
-        # Full-day TTL behavior:
-        # - If newest cache day is today, only refresh today's slice.
-        # - Otherwise, run incremental since newest to catch uncached days.
-        if newest_day == today:
-            print(f"  [github] refreshing today's PRs: {today}..{today}")
-            today_prs = _fetch_prs_for_day(today)
-            kept = [pr for pr in cached_prs if (pr.created_at[:10] if pr.created_at else "") != today]
-            all_prs = _dedupe_prs(kept + today_prs)
-            _save_cache(all_prs)
-            reviews = _load_reviews()
-            return GitHubPRResult(prs=all_prs, reviews=reviews, total=len(all_prs), source="incremental")
-
-        # Fetch only new PRs since the newest cached one
-        print(f"  [github] fetching new PRs since {newest[:10]}...")
-        new_prs = _fetch_prs_since(newest)
-
-        if new_prs:
-            # Deduplicate by URL (in case of overlap at the boundary)
-            existing_urls = {pr.url for pr in cached_prs}
-            truly_new = [pr for pr in new_prs if pr.url not in existing_urls]
-            print(f"  [github] found {len(truly_new)} new PRs")
-
-            # Also refresh state of recently cached OPEN PRs (they may have been merged/closed)
-            all_prs = truly_new + cached_prs
-        else:
-            print(f"  [github] no new PRs found")
-            all_prs = cached_prs
-
-        _save_cache(all_prs)
-        reviews = _load_reviews()
-        return GitHubPRResult(prs=all_prs, reviews=reviews, total=len(all_prs), source="incremental")
-
-    # First run: fetch everything
-    print("  [github] no cache found, fetching all PRs (this may take a while)...")
-    prs = _fetch_prs_since(None)
-    print(f"  [github] fetched {len(prs)} total PRs")
-    _save_cache(prs)
     reviews = _load_reviews()
-    return GitHubPRResult(prs=prs, reviews=reviews, total=len(prs), source="github-graphql")
+    return GitHubPRResult(prs=prs, reviews=reviews, total=len(prs), source=source)
 
 
 def compute_stats(result: GitHubPRResult) -> dict:

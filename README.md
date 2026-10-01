@@ -87,6 +87,16 @@ You can run scripts directly with `python3 main.py` and `python3 serve.py`; the 
 
 The frontend reads `/data.json`. Report generation writes data to `output/data.json` and mirrors it to `dashboard/public/data.json` for dev/build workflows.
 
+## GitHub counting and coverage
+
+- Each report paginates all accessible authored PRs and refreshes their state, merge dates, and changed-line/file counts, including old PRs.
+- Reviews count submitted review events, not unique reviewed PRs. Repeat submissions count separately; pending drafts and standalone issue/PR comments do not count. Approved, commented, changes-requested, and dismissed submissions are included.
+- Review collection refreshes the configured PR-creation history every run, including new reviews on old PRs. `github.history_start_year` defaults to 2015 and applies to the reviewed PR's creation year, not the review's submission year.
+- Both PR-search pages and each PR's review pages are paginated. Review search windows exceeding GitHub's 1,000-result search ceiling are split down to second precision; an indivisible oversized window is reported as incomplete rather than silently accepted.
+- Dashboard date filters use PR creation timestamps and review submission timestamps in UTC. Custom start/end dates are inclusive. Organization filtering applies to both; totals and monthly charts include every matching record.
+- Previously cached history is retained when repositories are no longer accessible. Those records cannot be refreshed, and unseen activity there cannot be counted. Legacy inaccessible reviews may still use draft-creation dates instead of submission dates. Report-generation warnings identify incomplete refreshes; API failures do not overwrite caches with partial results. Restoring repository access is required for fully current totals.
+- Full-history refreshes make more GitHub API requests than the former incremental cache.
+
 ## Notes
 
 - This tool reads local app data from common storage paths.

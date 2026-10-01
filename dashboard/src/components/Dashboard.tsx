@@ -418,7 +418,7 @@ function getPROrgOptions(data?: DashboardData["github_prs"]): PROrgOption[] {
 
   return Array.from(counts.entries())
     .sort(([, a], [, b]) => b - a)
-    .map(([value, count]) => ({ value, label: `${value} (${fmtNum(count)})` }))
+    .map(([value]) => ({ value, label: value }))
 }
 
 function getMergedPRsPerDayRows(prs: DashboardData["github_prs"]["prs"], months: string[]) {
@@ -2235,7 +2235,8 @@ function PRPage({
     <div>
       <div className="mb-6">
         <h2 className="text-xl font-bold">Pull Requests</h2>
-        <p className="text-sm text-muted-foreground">GitHub PR statistics across all repositories</p>
+        <p className="text-sm text-muted-foreground">Authored PRs by creation date; submitted reviews by submission date (UTC)</p>
+        <p className="mt-1 text-xs text-muted-foreground">Counts retain cached history. Repositories inaccessible to the authenticated GitHub account cannot be refreshed; check report-generation warnings for coverage gaps.</p>
       </div>
 
       <GitHubTimeRangeFilter
@@ -2299,6 +2300,7 @@ function PRPage({
             <StatCard label="Total PRs" value={fmtCompact(stats.total)} sub={fmtNum(stats.total) + " pull requests"} />
             <StatCard label="Merged" value={fmtCompact(stats.merged)} sub={`${stats.total > 0 ? (stats.merged / stats.total * 100).toFixed(1) : "0.0"}% merge rate`} color="#6f8b6e" />
             <StatCard label="Closed" value={fmtCompact(stats.closed)} sub="closed without merge" color="#8b6f9b" />
+            <StatCard label="Open" value={fmtCompact(stats.open)} sub="currently open" color="#b88a5a" />
             <StatCard label="Repositories" value={fmtCompact(repositoryCount)} sub="unique repos" color="#d97757" />
             <StatCard label="Avg Time to Merge" value={fmtMergeTime(stats.mergeTimeStats?.avg || 0)} sub="average merge time" color="#4f7f78" />
             <StatCard label="P90 Time to Merge" value={fmtMergeTime(stats.mergeTimeStats?.p90 || 0)} sub="P90 merge time" color="#d97757" />
@@ -2368,16 +2370,17 @@ function PRPage({
         <>
           <div className="mb-6">
             <h3 className="text-lg font-semibold mb-1">Reviews</h3>
-            <p className="text-sm text-muted-foreground">Review activity for the same PR scope</p>
+            <p className="text-sm text-muted-foreground">Submitted review events in the selected date range and organization, including repeated reviews on the same PR. Draft reviews and standalone PR comments are excluded.</p>
           </div>
 
           {hasReviews ? (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-6">
                 <StatCard label="Total Reviews" value={fmtCompact(reviewStats.total)} sub={`${fmtNum(reviewStats.total)} reviews given`} />
                 <StatCard label="Approved" value={fmtCompact(reviewStats.byState.APPROVED || 0)} sub={`${reviewStats.total > 0 ? (((reviewStats.byState.APPROVED || 0) / reviewStats.total) * 100).toFixed(1) : "0.0"}%`} color="#6f8b6e" />
                 <StatCard label="Commented" value={fmtCompact(reviewStats.byState.COMMENTED || 0)} sub={`${reviewStats.total > 0 ? (((reviewStats.byState.COMMENTED || 0) / reviewStats.total) * 100).toFixed(1) : "0.0"}%`} color="#b88a5a" />
                 <StatCard label="Changes Requested" value={fmtCompact(reviewStats.byState.CHANGES_REQUESTED || 0)} sub={`${reviewStats.total > 0 ? (((reviewStats.byState.CHANGES_REQUESTED || 0) / reviewStats.total) * 100).toFixed(1) : "0.0"}%`} color="#d97757" />
+                <StatCard label="Dismissed" value={fmtCompact(reviewStats.byState.DISMISSED || 0)} sub={`${reviewStats.total > 0 ? (((reviewStats.byState.DISMISSED || 0) / reviewStats.total) * 100).toFixed(1) : "0.0"}%`} color="#8b6f9b" />
               </div>
 
               <Card>
